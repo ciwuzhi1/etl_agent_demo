@@ -1,0 +1,16 @@
+# Taste
+- Writes in Chinese and expects deliverable documents (e.g. PRDs) produced in Chinese. Confidence: 0.75
+- Directs the assistant to run a named skill (e.g. "调用 skill prd-author") rather than ad-hoc generating output, i.e. prefers leveraging purpose-built skills/workflows by name. Confidence: 0.6
+- Poses design questions as a binary decision ("是否引入 X") plus concrete parameter asks ("频率/保留期是什么"), i.e. wants a recommendation with specific default values, not open-ended analysis. Confidence: 0.55
+- Works on Windows (paths under `C:\Users\...`, PowerShell, npm global installs) — expects Windows-compatible tooling/binaries (e.g. `.exe`, Windows install commands). Confidence: 0.7
+- Uses Command Code (`cmdc`) as the agent and maintains MCP servers for it, asking the assistant to wire up new MCP servers by name ("帮我添加 X 的 mcp") rather than configuring them manually. Confidence: 0.65
+- Prefers multi-item summaries/comparisons rendered as a table ("用表格方式来呈现") rather than prose, especially when explaining the roles/relationships of several components. Confidence: 0.6
+- Comfortable overwriting existing files in place ("直接覆盖 prd.md") — chose to regenerate/replace the existing document rather than preserve it as a new file. Confidence: 0.5
+- Works spec-driven: maintains living PRD/SPEC docs with numbered open questions / decision items (OQ-n, DQ-n) and ADRs, raising topics by referencing those IDs. Confidence: 0.6
+- Prefers a concise overview first (e.g. a summary table) and then drills into specific items on demand ("详细讲解第一个与最后一个数据库"), treating the overview as an index rather than wanting everything front-loaded. Confidence: 0.5
+- When scaffolding a new project, wants the assistant to mirror an existing reference/template project's skeleton ("模仿模版代码") — create the directory layout and prepare the environment shell, rather than inventing a fresh structure. Confidence: 0.55
+- Prefers to run environment/dependency-setup commands himself (e.g. "然后我来启动uv配置环境的命令") — wants the assistant to prepare files/config so he can execute the install steps, not have the assistant run them. Confidence: 0.55
+- Uses `uv` for Python project/environment management (uv project layout, `pyproject.toml`, `uv sync`). Confidence: 0.5
+- Reports blockers by pasting the raw terminal/command output verbatim and expects the assistant to diagnose the cause and fix the config itself (e.g. commenting out a dependency that hangs) rather than asking for a prose description of the problem. Confidence: 0.5
+- Wants explicit control over git commit scope — the assistant should not stage/commit untracked or unstaged changes on its own, but confirm boundaries first (his known preference is "不擅自提交未暂存内容"). Confidence: 0.5
+- Interrupts the task flow to ask "what is this for / why do we need it" about a component, dependency, or config file (e.g. a repo cloned during setup, an `alembic.ini`) that surfaced during the work, wanting its role and purpose explained (with the rationale for how it's used here) instead of silently continuing. Confidence: 0.6

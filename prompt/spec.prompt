@@ -1,0 +1,12 @@
+PRD文档审核通过，请根据此PRD文档生成SPEC文档：
+
+项目架构：采用前后端分离的模式进行开发
+前端技术：vue3
+后端技术：
+语言：Python
+框架： FastAPI+uvicorn、SQLAlchemy
+数据库：MySQL 8.4, localhost:3308, atguigu/@Atguigu.123
+管理包工程:uv
+[其他]
+注意这些是基础框架,其他配置严格按照
+C:\Users\ciwuzhi\Desktop\尚硅谷大模型项目之ETL-Agent(Harness)\3.代码\etl_agent_demo\docs\prd.md所需要技术栈与相应数据库配置

@@ -1,0 +1,113 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "seatunnel-etl-agent"
+version = "0.1.0"
+description = "SeaTunnel-native enterprise ETL Agent control plane"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "alembic>=1.16,<2",
+    "asyncpg>=0.30,<1",
+    "celery[redis]>=5.5,<6",
+    "cryptography>=50,<51",
+    "croniter>=6,<7",
+    "defusedxml>=0.7,<1",
+    "fastapi>=0.116,<1",
+    "httpx>=0.28,<1",
+    "langgraph>=0.6,<2",
+    "langgraph-checkpoint-postgres>=2.0,<4",
+    "openpyxl>=3.1,<4",
+    "oracledb>=3.3,<4",
+    "pyarrow>=23.0.1,<24",
+    "pure-sasl>=0.6,<1",
+    "pyhive>=0.7,<1",
+    "pyorc>=0.10,<1",
+    "pydantic-settings>=2.10,<3",
+    "pymysql>=1.1,<2",
+    "pypdf>=6,<7",
+    "python-multipart>=0.0.20,<1",
+    "python-tds>=1.17,<2",
+    "redis>=5,<7",
+    "sqlalchemy[asyncio]>=2.0.41,<3",
+    "structlog>=25,<26",
+    "thrift>=0.22,<1",
+    "thrift-sasl>=0.4,<1",
+    "tzdata>=2025.2",
+    "uvicorn[standard]>=0.35,<1",
+    "opentelemetry-api>=1.37,<2",
+    "opentelemetry-sdk>=1.37,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.37,<2",
+    "opentelemetry-instrumentation-fastapi>=0.58b0,<1",
+    "opentelemetry-instrumentation-httpx>=0.58b0,<1",
+    "opentelemetry-instrumentation-sqlalchemy>=0.58b0,<1",
+    "opentelemetry-instrumentation-celery>=0.58b0,<1",
+]
+
+# 可选的黑盒生成路径（默认走 direct）。seatunnel-cli 需从 GitHub 固定 commit 拉取，
+# 会克隆整个 Apache SeaTunnel 仓库，国内网络下极易卡住；需要时再手动启用。
+# [project.optional-dependencies]
+# seatunnel = ["seatunnel-cli[openai]"]
+
+[dependency-groups]
+dev = [
+    "aiosqlite>=0.21,<1",
+    "mypy>=1.17,<2",
+    "pip-audit>=2.9,<3",
+    "pytest>=8.4,<9",
+    "pytest-asyncio>=1.1,<2",
+    "pytest-cov>=6.2,<7",
+    "ruff>=0.12,<1",
+    "types-defusedxml>=0.7,<1",
+]
+
+[project.scripts]
+etl-agent-api = "etl_agent.main:run"
+etl-agent-checkpoint-setup = "etl_agent.agent.checkpoint:setup"
+etl-agent-benchmark = "etl_agent.benchmark_cli:main"
+
+[tool.uv]
+package = true
+
+# [tool.uv.sources]
+# seatunnel-cli = { git = "https://github.com/apache/seatunnel.git", rev = "2b060343dcc99c58fe53ebede9e8b6886e19bfeb", subdirectory = "seatunnel-cli" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/etl_agent"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --strict-config"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "simulation_l0: 无外部副作用的静态策略、权限与制品攻击仿真",
+    "simulation_l1: 仅在模拟器内注入故障、重放、超时和部分成功",
+    "simulation_l2: 需要开发 Compose 的真实 MySQL/文件、SeaTunnel 与 Doris 链路",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".uv-cache"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+ignore = [
+    "B008",   # FastAPI 官方推荐在参数默认值中使用 Depends。
+    "RUF001", # 中文业务文案需要全角标点。
+    "RUF002",
+    "RUF003",
+    "UP047",  # 当前保持 Python 3.12 也易读的 TypeVar 写法。
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+packages = ["etl_agent"]
+
+[[tool.mypy.overrides]]
+module = ["asyncpg.*", "celery.*", "openpyxl.*", "oracledb.*", "pyarrow.*", "pyhive.*", "pymysql.*", "pyorc.*", "pytds.*", "seatunnel_cli.*"]
+ignore_missing_imports = true
