@@ -46,3 +46,67 @@
 ## 6. 假设与待确认
 
 现在请先分析我接下来上传的原型图；如果我已上传，请直接开始。请用中文回答。
+
+
+====================================================================================================================
+请阅读我上传的文档《生产级 ETL Agent 项目实战》第 1 章。
+
+只做一件事：根据第 1.2 节 "用订单清洗样例把问题说具体" 中给出的 MySQL 初始化脚本，在我的本地 MySQL 中建立用于教学的订单样例数据库。
+
+要求：
+1. 提取文档中 infra/e2e/mysql-init.sql 的完整 SQL（CREATE TABLE orders 与 INSERT 语句）。
+2. 目标数据库名：source_db。
+3. 使用我提供的连接信息（host、port、user、password）；我没有提供时，使用本地默认：
+   - host: 127.0.0.1
+   - port: 3306
+   - user: root
+   - password: root
+4. 执行顺序：先创建数据库 etl_source_db（若不存在），再建表 orders，再写入 8 行固定教学数据。
+5. 执行完毕后，请返回以下验证结果：
+   - 总行数；
+   - 满足有效条件（order_id 非空、customer_name 去空格后非空、amount > 0、status IN ('PAID','SHIPPED')）的行数与 order_id 列表；
+   - 因 status 不允许被拒绝的行；
+   - 因金额为负被拒绝的行；
+   - 因客户名称为空被拒绝的行。
+6. 对照第 1.2 节的清洗契约和 Golden Case，确认：
+   - 1001—1004 有效；
+   - 1005 因 STATUS_ALLOWED 被拒绝；
+   - 1006 因 AMOUNT_POSITIVE 被拒绝；
+   - 1007、1008 因 CUSTOMER_REQUIRED 被拒绝；
+   - Alice 的客户名称两侧空格被去除；
+   - alice@example.com 脱敏后变为 ***@example.com。
+7. 如果 SQL 执行失败，请给出明确错误原因；不要修改文档中的原始数据或规则。
+8. 只使用第 1 章的内容，不要提前引入第 3 章的领域模型或 Alembic 迁移。
+工作目录：C:\Users\ciwuzhi\Desktop\尚硅谷大模型项目之ETL-Agent(Harness)\3.代码\etl_agent_demo
+这是要写代码的项目。同级的 ../etl_agent 只是课件参考实现，只读，用来核对枚举名、路由、
+配置项和最终目录形态，不要改动它。
+===========================================================================================
+任务：按《生产级 ETL Agent 项目实战》第 2 章（§2.2–§2.9）搭好工程底座，完成计划表里的 B-4，
+不要越到第 3 章。
+
+要做：
+1. src/etl_agent/config.py：供应商中立的配置入口，从 .env 读取全部配置项，并在加载时校验
+   生产边界（production 不许 dev-header、不许空共享密钥；local 放宽）。错误信息要指明是哪个
+   配置项不合法，且不得打印任何秘密值。
+2. src/etl_agent/main.py：FastAPI 应用入口 + GET /health，返回四字段 JSON：
+   status / service / secret_provider / secret_provider_configured。最后一项只表示"必要配置
+   存在"，不读取、不返回秘密本身。
+3. 数据库 Session 边界（§2.9）：异步引擎 + session factory，业务库与 Checkpoint 库两条 URL
+   分开，禁止在请求外共享连接。
+4. src/etl_agent/worker.py：Celery 装配（broker/backend 指向 Redis），本章只保证能 import 和
+   启动，不写具体任务。
+5. .env 补齐运行必需的秘密：生成一个真实 Fernet 主密钥填进 ETL_AGENT_SECRET_MASTER_KEY；
+   LLM 相关项保持空（本任务不调模型）。确认 .env 与 var/ 都被 gitignore。
+6. 创建 var/artifacts、var/file-assets、var/harness 三个本地目录。
+
+不要做：不建领域模型、不写 Alembic 迁移、不动 alembic/versions/、不引入 LangGraph 图、
+不启动 Compose 的 e2e Profile（mysql-e2e/doris/seatunnel 保持关闭，样例库仍在本机 MySQL 3306）。
+
+验收并给我证据：
+- uv run uvicorn 起在 127.0.0.1:8000，curl /health 返回上面四字段，secret_provider 值为 fernet-db
+  且 configured=true；
+- 故意把 ETL_AGENT_ENVIRONMENT 改成 production 而不配 gateway 密钥时，进程启动即失败并报出
+  具体配置项名；
+- uv run pytest -q 全绿（此时 tests/unit 应仍为空，说明"没测到东西"而不是"测试通过"）；
+- 最后把 docs/第1章-待完成计划表.md 里 B-4 的状态更新为已完成，并简述新增文件清单。
+
