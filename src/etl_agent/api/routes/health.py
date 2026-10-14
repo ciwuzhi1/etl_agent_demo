@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from etl_agent.api.schemas import HealthResponse
-from etl_agent.infrastructure.secret_provider_status import secret_provider_readiness
+from etl_agent.infrastructure.secret_factory import secret_provider_readiness
 
 router = APIRouter(tags=["system"])
 

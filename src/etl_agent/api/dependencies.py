@@ -58,9 +58,7 @@ def gateway_signature_payload(
     path_and_query: str,
 ) -> bytes:
     """构造网关与控制面共享的规范签名文本，字段换行分隔以避免拼接歧义。"""
-    return "\n".join(
-        (actor, timestamp, nonce, method.upper(), path_and_query)
-    ).encode("utf-8")
+    return "\n".join((actor, timestamp, nonce, method.upper(), path_and_query)).encode("utf-8")
 
 
 def sign_gateway_identity(

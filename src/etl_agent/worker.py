@@ -7,10 +7,10 @@ celery_app = Celery(
     "etl_agent",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    # 任务模块按章节追加：etl_agent.tasks、connection_tasks、agent_tasks、operations_tasks、
-    # rollback_tasks、cleanup_tasks、secret_* 、credential_alert_tasks、file_asset_tasks、
-    # schedule_tasks、harness_outbox_tasks。本章不声明任何任务实现。
-    include=[],
+    # 任务模块按章节追加：connection_tasks 已在第 4 章接入；后续还有 tasks、agent_tasks、
+    # operations_tasks、rollback_tasks、cleanup_tasks、secret_* 、credential_alert_tasks、
+    # file_asset_tasks、schedule_tasks、harness_outbox_tasks。
+    include=["etl_agent.connection_tasks"],
 )
 celery_app.conf.update(
     task_serializer="json",
