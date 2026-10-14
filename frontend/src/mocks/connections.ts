@@ -1,0 +1,138 @@
+import type { Connection, DataProfile, FileAsset, SecretLifecycle } from '@/types/models'
+
+export const mockConnections: Connection[] = [
+  {
+    id: 'conn-mysql-orders',
+    name: 'MySQL 订单库',
+    connectorType: 'MYSQL',
+    host: 'localhost',
+    port: 3308,
+    database: 'source_db',
+    direction: 'SOURCE',
+    status: 'READY',
+    lastTestedAt: '2026-10-14T02:12:00Z',
+  },
+  {
+    id: 'conn-doris-analytics',
+    name: 'Doris 分析库',
+    connectorType: 'DORIS',
+    host: 'localhost',
+    port: 9030,
+    database: 'analytics',
+    direction: 'SINK',
+    status: 'READY',
+    lastTestedAt: '2026-10-14T02:14:00Z',
+  },
+  {
+    id: 'conn-pg-legacy',
+    name: 'PostgreSQL 遗留库',
+    connectorType: 'POSTGRESQL',
+    host: '10.20.0.31',
+    port: 5432,
+    database: 'legacy',
+    direction: 'SOURCE',
+    status: 'TESTING',
+    lastTestedAt: null,
+  },
+  {
+    id: 'conn-hive-ods',
+    name: 'Hive ODS',
+    connectorType: 'HIVE',
+    host: '10.20.0.44',
+    port: 10000,
+    database: 'ods',
+    direction: 'SOURCE',
+    status: 'FAILED',
+    lastTestedAt: '2026-10-13T18:40:00Z',
+  },
+]
+
+export const mockProfiles: DataProfile[] = [
+  {
+    id: 'prof-orders-source',
+    connectionId: 'conn-mysql-orders',
+    table: 'orders',
+    direction: 'SOURCE',
+    sampleRows: 100,
+    columnCount: 12,
+    expiresAt: '2026-10-21T02:12:00Z',
+    status: 'READY',
+  },
+  {
+    id: 'prof-clean-orders-sink',
+    connectionId: 'conn-doris-analytics',
+    table: 'clean_orders',
+    direction: 'SINK',
+    sampleRows: 100,
+    columnCount: 11,
+    expiresAt: '2026-10-21T02:14:00Z',
+    status: 'READY',
+  },
+  {
+    id: 'prof-customers-source',
+    connectionId: 'conn-mysql-orders',
+    table: 'customers',
+    direction: 'SOURCE',
+    sampleRows: 100,
+    columnCount: 9,
+    expiresAt: '2026-10-21T02:12:00Z',
+    status: 'READY',
+  },
+]
+
+export const mockFiles: FileAsset[] = [
+  {
+    id: 'file-orders-jsonl',
+    name: 'orders-2026-10-13.jsonl',
+    format: 'JSONL',
+    rows: 12840,
+    sizeBytes: 3_145_728,
+    status: 'PARSED',
+    uploadedAt: '2026-10-13T23:10:00Z',
+  },
+  {
+    id: 'file-customers-csv',
+    name: 'customers.csv',
+    format: 'CSV',
+    rows: 5021,
+    sizeBytes: 812_544,
+    status: 'PARSED',
+    uploadedAt: '2026-10-13T23:12:00Z',
+  },
+  {
+    id: 'file-refund-xlsx',
+    name: 'refund.xlsx',
+    format: 'XLSX',
+    rows: 0,
+    sizeBytes: 24_576,
+    status: 'FAILED',
+    uploadedAt: '2026-10-14T00:02:00Z',
+  },
+]
+
+export const mockSecrets: SecretLifecycle[] = [
+  {
+    id: 'sec-mysql-orders',
+    connectionId: 'conn-mysql-orders',
+    status: 'ACTIVE',
+    issuedAt: '2026-09-01T00:00:00Z',
+    expiresAt: '2026-11-30T00:00:00Z',
+    daysToExpiry: 47,
+  },
+  {
+    id: 'sec-doris-analytics',
+    connectionId: 'conn-doris-analytics',
+    status: 'STAGED',
+    issuedAt: '2026-10-14T00:00:00Z',
+    expiresAt: '2026-10-21T00:00:00Z',
+    daysToExpiry: 7,
+  },
+  {
+    id: 'sec-hive-ods',
+    connectionId: 'conn-hive-ods',
+    status: 'ACTIVE',
+    issuedAt: '2026-07-20T00:00:00Z',
+    expiresAt: '2026-10-19T00:00:00Z',
+    daysToExpiry: 5,
+  },
+]
