@@ -109,4 +109,37 @@
   具体配置项名；
 - uv run pytest -q 全绿（此时 tests/unit 应仍为空，说明"没测到东西"而不是"测试通过"）；
 - 最后把 docs/第1章-待完成计划表.md 里 B-4 的状态更新为已完成，并简述新增文件清单。
+===============================================================================================================
+工作目录：…\3.代码\etl_agent_demo（写代码的对象）；../etl_agent 只读参考，禁止改动。
+范围选 ①：第 3 章只按参考实现 20260804_0001 的 9 张表建模（users、projects、
+project_memberships、pipelines、pipeline_versions、pipeline_artifacts、approval_requests、
+execution_runs、audit_events）。ProjectRoleGrant、AgentRun 留给第 11、8 章。
 
+参考实现只用来核对：枚举/异常/状态机函数的命名契约、9 个模型的列与约束、
+4 个测试文件的断言语义。不要整文件复制，不要引入第 4 章及以后的依赖。
+
+要做：
+1 domain/enums.py（§3.3 清单，28 个类，与参考实现逐字相同，可照抄）+ domain/harness.py::HarnessRole
+2 domain/errors.py（课件无此清单，按参考实现建 6 个类）
+3 infrastructure/models.py：仅上述 9 表，须能被 aiosqlite create_all 建出，不用 PG 专有类型
+4 alembic/versions/20260804_0001_initial.py：revision=20260804_0001、down_revision=None；禁止 create_all 代替迁移
+5 application/：一次性 Bootstrap 建首位管理员、成员添加与项目角色授予、越权与重复成员判定
+6 api/dependencies.py：dev-header 读 X-Actor-Id；trusted-gateway 验 HMAC+时间偏差+Redis Nonce，
+  Redis 不可用返回 503，不许降级放行
+7 api/routes/projects.py：bootstrap 与成员端点，二次 bootstrap 409
+8 domain/state_machine.py：显式迁移表，拒绝跳步与终态原地重启
+9 main.py：收敛 DEV-3（DomainError→403/404/409/503）并挂载 projects 路由到 api_prefix
+10 tests/conftest.py（现为空）：照参考实现补内存 SQLite session fixture
+11 四个测试：test_project_bootstrap / test_project_members / test_authentication / test_state_machine
+
+不要做：不建后两表、不接 LLM、不碰 SeaTunnel/Doris、不启 e2e Profile、
+不放宽生产校验、不新建 .md（只回写既有任务表）。
+已就绪：PG 与 Redis healthy、.env 有合法 Fernet 密钥、dev 组含 aiosqlite/pytest/ruff/mypy。
+
+验收（如实，没跑的别写成通过）：
+- alembic upgrade head / current / heads 均显示 20260804_0001（正文的 20260808_0033 是前向引用，本章不适用）
+- 查库确认这 9 张表存在且仅此 9 张
+- 四个测试文件全绿并贴用例数；§3.10 十条场景逐条 ✅/❌ 并给断言出处
+- ruff 与 mypy strict 通过
+- production 且无 gateway 密钥时进程仍拒绝启动且日志不含秘密
+- 更新 docs/第3章-任务表.md 状态，并把第 2 章任务表的 DEV-3 标为已收敛
