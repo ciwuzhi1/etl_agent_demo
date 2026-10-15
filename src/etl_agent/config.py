@@ -35,11 +35,12 @@ class Settings(BaseSettings):
     seatunnel_api_url: AnyHttpUrl = Field(default=AnyHttpUrl("http://localhost:8080"))
     seatunnel_timezone: str = "UTC"
     seatunnel_llm_provider: str = "openai-compatible"
-    generation_backend: Literal["direct", "seatunnel-cli"] = "direct"
+    generation_backend: Literal["mock", "direct", "seatunnel-cli"] = "mock"
     llm_api_key: SecretStr | None = None
     llm_base_url: AnyHttpUrl | None = None
     llm_model: str | None = Field(default=None, max_length=255)
     llm_fast_model: str | None = Field(default=None, max_length=255)
+    llm_timeout_seconds: float = Field(default=180, gt=0, le=600)
     llm_request_timeout_seconds: float = Field(default=180, gt=0, le=600)
     row_llm_transform_enabled: bool = False
     row_llm_api_key: SecretStr | None = None

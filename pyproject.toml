@@ -44,6 +44,8 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.58b0,<1",
     "opentelemetry-instrumentation-sqlalchemy>=0.58b0,<1",
     "opentelemetry-instrumentation-celery>=0.58b0,<1",
+    "openai>=3.31.0",
+    "pynacl>=1.6.2",
 ]
 
 # 可选的黑盒生成路径（默认走 direct）。seatunnel-cli 需从 GitHub 固定 commit 拉取，

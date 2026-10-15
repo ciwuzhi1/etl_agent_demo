@@ -356,7 +356,7 @@ erDiagram
 | 编号 | 方法 | 路径 | 说明 |
 |------|------|------|------|
 | API-01 | POST | `/api/v1/projects/bootstrap` | 一次性初始化（成功后永久 409） |
-| API-02 | POST | `/api/v1/connections` → `/connections/{id}/tests|profiles` | 登记连接、异步测试与探查（202） |
+| API-02 | POST | `/api/v1/connections` → `/connections/{id}/tests` 与 `/connections/{id}/profiles` | 登记连接、异步测试与探查（202） |
 | API-03 | POST | `/api/v1/pipelines/versions/{id}/generation` | 启动候选生成（投递 AgentRun，202） |
 | API-04 | POST | `/api/v1/pipeline-versions/{id}/approval-requests` → `/approval-requests/{id}/decisions` | 版本四眼审批 |
 | API-05 | POST | `/api/v1/pipeline-versions/{id}/execution-preparations` | Prepare（冻结事实，无副作用，201） |

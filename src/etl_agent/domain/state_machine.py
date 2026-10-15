@@ -52,7 +52,7 @@ AGENT_RUN_TRANSITIONS: Mapping[AgentRunStatus, frozenset[AgentRunStatus]] = {
         }
     ),
     AgentRunStatus.WAITING_INPUT: frozenset({AgentRunStatus.QUEUED, AgentRunStatus.FAILED}),
-    AgentRunStatus.WAITING_APPROVAL: frozenset(),
+    AgentRunStatus.WAITING_APPROVAL: frozenset({AgentRunStatus.FAILED}),
     AgentRunStatus.FAILED: frozenset(),
 }
 

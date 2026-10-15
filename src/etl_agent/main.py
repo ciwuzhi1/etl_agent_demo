@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from etl_agent.api.routes import connections, health, projects
+from etl_agent.api.routes import connections, file_assets, health, projects
 from etl_agent.config import get_settings
 from etl_agent.domain.errors import (
     DomainError,
@@ -17,6 +17,7 @@ app = FastAPI(title=settings.app_name, version="0.1.0")
 app.include_router(health.router)
 app.include_router(projects.router, prefix=settings.api_prefix)
 app.include_router(connections.router, prefix=settings.api_prefix)
+app.include_router(file_assets.router, prefix=settings.api_prefix)
 # 后续章节的业务路由按章节顺序在此追加。
 
 

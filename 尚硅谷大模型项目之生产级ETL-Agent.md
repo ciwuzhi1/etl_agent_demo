@@ -3089,9 +3089,7 @@ def gateway_signature_payload(
     path_and_query: str,
 ) -> bytes:
     """构造网关与控制面共享的规范签名文本，字段换行分隔以避免拼接歧义。"""
-    return "\n".join(
-        (actor, timestamp, nonce, method.upper(), path_and_query)
-    ).encode("utf-8")
+    return "\n".join((actor, timestamp, nonce, method.upper(), path_and_query)).encode("utf-8")
 
 
 def sign_gateway_identity(
@@ -3493,11 +3491,7 @@ def require_identifier(value: str, label: str) -> None:
 
 def require_hdfs_path(value: str, label: str) -> None:
     """校验 HDFS 相对路径片段，拒绝父目录跳转、反斜杠和查询参数注入。"""
-    if (
-        not HDFS_PATH_PATTERN.fullmatch(value)
-        or ".." in value.split("/")
-        or "\\" in value
-    ):
+    if not HDFS_PATH_PATTERN.fullmatch(value) or ".." in value.split("/") or "\\" in value:
         raise DomainError(f"{label} 不是安全的 HDFS 路径")
 
 
@@ -6385,9 +6379,7 @@ XLSX 只读取活动工作表。多 Sheet 选择、公式重新计算、合并�
 
 <!-- COURSEWARE_SOURCE_BEGIN source="src/etl_agent/application/file_assets.py::_read_parquet" -->
 ```python
-def _read_parquet(
-    content: bytes, max_rows: int
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def _read_parquet(content: bytes, max_rows: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """解析 Parquet 表并在物化行数据前检查元数据行数，避免压缩文件放大耗尽内存。"""
     try:
         parquet_file = arrow_parquet.ParquetFile(pa.BufferReader(content))
@@ -6852,14 +6844,10 @@ def _schema_diffs(
             if isinstance(column, dict) and column.get("name")
         }
         added = [
-            column["name"]
-            for key, column in target_columns.items()
-            if key not in source_columns
+            column["name"] for key, column in target_columns.items() if key not in source_columns
         ]
         removed = [
-            column["name"]
-            for key, column in source_columns.items()
-            if key not in target_columns
+            column["name"] for key, column in source_columns.items() if key not in target_columns
         ]
         changed = [
             {
@@ -6929,7 +6917,7 @@ def test_design_review_builds_routed_dag_schema_diff_and_honest_preview() -> Non
             "masked_sample": [],
         },
     ]
-    hocon = '''source {
+    hocon = """source {
       Jdbc { plugin_output = "raw_orders" }
     }
     transform {
@@ -6941,7 +6929,7 @@ def test_design_review_builds_routed_dag_schema_diff_and_honest_preview() -> Non
     }
     sink {
       Jdbc { plugin_input = "clean_rows" }
-    }'''
+    }"""
 
     review = build_design_review(
         profiles,
@@ -8335,7 +8323,7 @@ def _extract_complete_hocon(value: str) -> str | None:
             line_comment = True
             index += 2 if candidate.startswith("//", index) else 1
             continue
-        if candidate.startswith('\"\"\"', index):
+        if candidate.startswith('"""', index):
             quote = '"'
             triple_quote = True
             index += 3
@@ -9346,9 +9334,7 @@ def build_generation_graph(
                 # Agent 修复闭环，既浪费人工时间，也无法使用剩余候选预算。
                 engine_check = await candidate_validator(result.hocon or "")
                 if engine_check.get("valid") is not True:
-                    summary = str(
-                        engine_check.get("summary") or "SeaTunnel CLI --check 未通过"
-                    )
+                    summary = str(engine_check.get("summary") or "SeaTunnel CLI --check 未通过")
                     raise DomainError("SeaTunnel 真实引擎检查未通过：" + summary)
         except DomainError as exc:
             repair_count = state.get("repair_count", 0)
@@ -9525,84 +9511,83 @@ Checkpoint 不是企业审批记录，原因有三点：
 
 <!-- COURSEWARE_SOURCE_BEGIN source="src/etl_agent/application/agent_runs.py::AgentRunService.start" -->
 ```python
-    async def start(
-        self,
-        session: AsyncSession,
-        *,
-        version_id: uuid.UUID,
-        profile_ids: list[uuid.UUID],
-        quality_contract: QualityContract | None = None,
-        incremental_contract: WatermarkContract | None = None,
-        row_llm_contract: RowLlmTransformContract | None = None,
-        actor_id: uuid.UUID,
-        trace_id: str | None = None,
-    ) -> AgentRun:
-        """在AgentRun 应用服务中启动受状态机约束的业务流程；作为业务入口，
-        统一维护该步骤的输入校验、状态约束和异常语义。
-        """
-        if not profile_ids:
-            raise DomainError("至少选择一个已完成的 DataProfile")
-        if len(profile_ids) != len(set(profile_ids)):
-            raise DomainError("DataProfile 不能重复选择")
-        version, project_id = await self._version_and_project(session, version_id)
-        await require_project_role(
-            session,
-            project_id,
-            actor_id,
-            {ProjectRole.ADMIN, ProjectRole.DATA_ENGINEER},
-        )
-        if version.status is not PipelineVersionStatus.PROFILING:
-            raise VersionConflict("Agent 只能从 PROFILING 状态开始生成")
-        await OperationsService().require_generation_worker_ready(session)
+async def start(
+    self,
+    session: AsyncSession,
+    *,
+    version_id: uuid.UUID,
+    profile_ids: list[uuid.UUID],
+    quality_contract: QualityContract | None = None,
+    incremental_contract: WatermarkContract | None = None,
+    row_llm_contract: RowLlmTransformContract | None = None,
+    actor_id: uuid.UUID,
+    trace_id: str | None = None,
+) -> AgentRun:
+    """在AgentRun 应用服务中启动受状态机约束的业务流程；作为业务入口，
+    统一维护该步骤的输入校验、状态约束和异常语义。
+    """
+    if not profile_ids:
+        raise DomainError("至少选择一个已完成的 DataProfile")
+    if len(profile_ids) != len(set(profile_ids)):
+        raise DomainError("DataProfile 不能重复选择")
+    version, project_id = await self._version_and_project(session, version_id)
+    await require_project_role(
+        session,
+        project_id,
+        actor_id,
+        {ProjectRole.ADMIN, ProjectRole.DATA_ENGINEER},
+    )
+    if version.status is not PipelineVersionStatus.PROFILING:
+        raise VersionConflict("Agent 只能从 PROFILING 状态开始生成")
+    await OperationsService().require_generation_worker_ready(session)
 
-        active = await session.scalar(
-            select(AgentRun.id).where(
-                AgentRun.pipeline_version_id == version_id,
-                AgentRun.status.in_(ACTIVE_AGENT_STATUSES),
-            )
+    active = await session.scalar(
+        select(AgentRun.id).where(
+            AgentRun.pipeline_version_id == version_id,
+            AgentRun.status.in_(ACTIVE_AGENT_STATUSES),
         )
-        if active is not None:
-            raise VersionConflict("该 Pipeline 版本已有正在处理的 AgentRun")
+    )
+    if active is not None:
+        raise VersionConflict("该 Pipeline 版本已有正在处理的 AgentRun")
 
-        profiles = list(
-            (
-                await session.scalars(select(DataProfile).where(DataProfile.id.in_(profile_ids)))
-            ).all()
-        )
-        file_assets = list(
-            (await session.scalars(select(FileAsset).where(FileAsset.id.in_(profile_ids)))).all()
-        )
-        found_ids = {profile.id for profile in profiles} | {asset.id for asset in file_assets}
-        if found_ids != set(profile_ids):
-            raise ResourceNotFound("部分 DataProfile 不存在")
-        now = datetime.now(UTC)
+    profiles = list(
+        (await session.scalars(select(DataProfile).where(DataProfile.id.in_(profile_ids)))).all()
+    )
+    file_assets = list(
+        (await session.scalars(select(FileAsset).where(FileAsset.id.in_(profile_ids)))).all()
+    )
+    found_ids = {profile.id for profile in profiles} | {asset.id for asset in file_assets}
+    if found_ids != set(profile_ids):
+        raise ResourceNotFound("部分 DataProfile 不存在")
+    now = datetime.now(UTC)
+    for profile in profiles:
+        connection = await session.get(DataConnection, profile.connection_id)
+        if connection is None or connection.project_id != project_id:
+            raise DomainError("DataProfile 不属于当前 Pipeline 项目")
+        if profile.status is not DataProfileStatus.READY:
+            raise DomainError("只能使用 READY 状态的 DataProfile")
+        if profile.expires_at and _as_utc(profile.expires_at) <= now:
+            raise DomainError("DataProfile 已过期，请重新探查")
+    for asset in file_assets:
+        if asset.project_id != project_id:
+            raise DomainError("文件 Profile 不属于当前 Pipeline 项目")
+        if asset.status is not DataProfileStatus.READY or not asset.engine_path:
+            raise DomainError("只能使用 READY 状态的文件 Profile")
+        if asset.expires_at and _as_utc(asset.expires_at) <= now:
+            raise DomainError("文件 Profile 已过期，请重新上传或探查")
+
+    if row_llm_contract is not None:
+        validate_row_llm_runtime_policy(row_llm_contract, get_settings())
+        _validate_row_llm_profile(row_llm_contract, profiles, file_assets)
+
+    if incremental_contract is not None:
+        matched = False
         for profile in profiles:
             connection = await session.get(DataConnection, profile.connection_id)
-            if connection is None or connection.project_id != project_id:
-                raise DomainError("DataProfile 不属于当前 Pipeline 项目")
-            if profile.status is not DataProfileStatus.READY:
-                raise DomainError("只能使用 READY 状态的 DataProfile")
-            if profile.expires_at and _as_utc(profile.expires_at) <= now:
-                raise DomainError("DataProfile 已过期，请重新探查")
-        for asset in file_assets:
-            if asset.project_id != project_id:
-                raise DomainError("文件 Profile 不属于当前 Pipeline 项目")
-            if asset.status is not DataProfileStatus.READY or not asset.engine_path:
-                raise DomainError("只能使用 READY 状态的文件 Profile")
-            if asset.expires_at and _as_utc(asset.expires_at) <= now:
-                raise DomainError("文件 Profile 已过期，请重新上传或探查")
-
-        if row_llm_contract is not None:
-            validate_row_llm_runtime_policy(row_llm_contract, get_settings())
-            _validate_row_llm_profile(row_llm_contract, profiles, file_assets)
-
-        if incremental_contract is not None:
-            matched = False
-            for profile in profiles:
-                connection = await session.get(DataConnection, profile.connection_id)
-                if connection is None:
-                    raise ResourceNotFound("DataProfile 对应的数据连接不存在")
-                matched = validate_watermark_profile(
+            if connection is None:
+                raise ResourceNotFound("DataProfile 对应的数据连接不存在")
+            matched = (
+                validate_watermark_profile(
                     incremental_contract,
                     profile_id=str(profile.id),
                     columns=profile.schema_json.get("columns", []),
@@ -9610,58 +9595,58 @@ Checkpoint 不是企业审批记录，原因有三点：
                         profile.endpoint_role is DataEndpointRole.SOURCE
                         and connection.connector_type
                         in {
-                        ConnectorType.MYSQL,
-                        ConnectorType.POSTGRESQL,
-                        ConnectorType.ORACLE,
-                        ConnectorType.SQL_SERVER,
-                        ConnectorType.HIVE,
+                            ConnectorType.MYSQL,
+                            ConnectorType.POSTGRESQL,
+                            ConnectorType.ORACLE,
+                            ConnectorType.SQL_SERVER,
+                            ConnectorType.HIVE,
                         }
                     ),
-                ) or matched
-            if not matched:
-                raise DomainError("增量契约引用的 Source Profile 不在本次 AgentRun 中")
-
-        run = AgentRun(
-            pipeline_version_id=version_id,
-            profile_ids=[str(profile_id) for profile_id in profile_ids],
-            quality_contract=(
-                quality_contract.model_dump(mode="json") if quality_contract is not None else None
-            ),
-            incremental_contract=(
-                incremental_contract.model_dump(mode="json")
-                if incremental_contract is not None
-                else None
-            ),
-            row_llm_contract=(
-                row_llm_contract.model_dump(mode="json")
-                if row_llm_contract is not None
-                else None
-            ),
-            requested_by=actor_id,
-        )
-        session.add(run)
-        await session.flush()
-        session.add(
-            AuditEvent(
-                actor_id=actor_id,
-                project_id=project_id,
-                action="agent_run.started",
-                resource_type="AgentRun",
-                resource_id=run.id,
-                before=None,
-                after={
-                    "status": run.status.value,
-                    "pipeline_version_id": str(version_id),
-                    "profile_ids": run.profile_ids,
-                    "quality_contract": run.quality_contract,
-                    "incremental_contract": run.incremental_contract,
-                    "row_llm_contract": run.row_llm_contract,
-                },
-                trace_id=trace_id,
+                )
+                or matched
             )
+        if not matched:
+            raise DomainError("增量契约引用的 Source Profile 不在本次 AgentRun 中")
+
+    run = AgentRun(
+        pipeline_version_id=version_id,
+        profile_ids=[str(profile_id) for profile_id in profile_ids],
+        quality_contract=(
+            quality_contract.model_dump(mode="json") if quality_contract is not None else None
+        ),
+        incremental_contract=(
+            incremental_contract.model_dump(mode="json")
+            if incremental_contract is not None
+            else None
+        ),
+        row_llm_contract=(
+            row_llm_contract.model_dump(mode="json") if row_llm_contract is not None else None
+        ),
+        requested_by=actor_id,
+    )
+    session.add(run)
+    await session.flush()
+    session.add(
+        AuditEvent(
+            actor_id=actor_id,
+            project_id=project_id,
+            action="agent_run.started",
+            resource_type="AgentRun",
+            resource_id=run.id,
+            before=None,
+            after={
+                "status": run.status.value,
+                "pipeline_version_id": str(version_id),
+                "profile_ids": run.profile_ids,
+                "quality_contract": run.quality_contract,
+                "incremental_contract": run.incremental_contract,
+                "row_llm_contract": run.row_llm_contract,
+            },
+            trace_id=trace_id,
         )
-        await session.flush()
-        return run
+    )
+    await session.flush()
+    return run
 ```
 <!-- COURSEWARE_SOURCE_END source="src/etl_agent/application/agent_runs.py::AgentRunService.start" -->
 
@@ -9673,145 +9658,143 @@ Checkpoint 不是企业审批记录，原因有三点：
 
 <!-- COURSEWARE_SOURCE_BEGIN source="src/etl_agent/application/agent_runs.py::AgentRunService.generation_input" -->
 ```python
-    async def generation_input(
-        self, session: AsyncSession, run_id: uuid.UUID
-    ) -> tuple[AgentRun, str, dict[str, Any]]:
-        """组装只包含连接别名、Schema 和脱敏样本的生成上下文，阻断密钥进入模型。"""
-        run = await session.get(AgentRun, run_id)
-        if run is None:
-            raise ResourceNotFound("AgentRun 不存在")
-        version = await session.get(PipelineVersion, run.pipeline_version_id)
-        if version is None:
-            raise ResourceNotFound("Pipeline 版本不存在")
+async def generation_input(
+    self, session: AsyncSession, run_id: uuid.UUID
+) -> tuple[AgentRun, str, dict[str, Any]]:
+    """组装只包含连接别名、Schema 和脱敏样本的生成上下文，阻断密钥进入模型。"""
+    run = await session.get(AgentRun, run_id)
+    if run is None:
+        raise ResourceNotFound("AgentRun 不存在")
+    version = await session.get(PipelineVersion, run.pipeline_version_id)
+    if version is None:
+        raise ResourceNotFound("Pipeline 版本不存在")
 
-        profile_ids = [uuid.UUID(value) for value in run.profile_ids]
-        profiles = list(
-            (
-                await session.scalars(select(DataProfile).where(DataProfile.id.in_(profile_ids)))
-            ).all()
-        )
-        file_assets = list(
-            (await session.scalars(select(FileAsset).where(FileAsset.id.in_(profile_ids)))).all()
-        )
-        connections: dict[uuid.UUID, DataConnection] = {}
-        for profile in profiles:
-            if profile.connection_id not in connections:
-                connection = await session.get(DataConnection, profile.connection_id)
-                if connection is None:
-                    raise ResourceNotFound("DataProfile 对应的数据连接不存在")
-                connections[profile.connection_id] = connection
+    profile_ids = [uuid.UUID(value) for value in run.profile_ids]
+    profiles = list(
+        (await session.scalars(select(DataProfile).where(DataProfile.id.in_(profile_ids)))).all()
+    )
+    file_assets = list(
+        (await session.scalars(select(FileAsset).where(FileAsset.id.in_(profile_ids)))).all()
+    )
+    connections: dict[uuid.UUID, DataConnection] = {}
+    for profile in profiles:
+        if profile.connection_id not in connections:
+            connection = await session.get(DataConnection, profile.connection_id)
+            if connection is None:
+                raise ResourceNotFound("DataProfile 对应的数据连接不存在")
+            connections[profile.connection_id] = connection
 
-        context_by_id = {
-            profile.id: _database_profile_context(
-                profile,
-                connections[profile.connection_id],
+    context_by_id = {
+        profile.id: _database_profile_context(
+            profile,
+            connections[profile.connection_id],
+        )
+        for profile in profiles
+    }
+    context_by_id.update({asset.id: _file_asset_context(asset) for asset in file_assets})
+    try:
+        profile_context = [context_by_id[profile_id] for profile_id in profile_ids]
+    except KeyError as exc:
+        raise ResourceNotFound("AgentRun 引用的 Profile 已不存在") from exc
+    metadata_context: dict[str, Any] = {
+        "profiles": profile_context,
+        "pipeline_topology": _pipeline_topology(
+            profile_context,
+            run.quality_contract,
+        ),
+        "credential_policy": (
+            "Use the exact connection_placeholders and credential_placeholders supplied "
+            "for each connection; never request or emit topology or secrets."
+        ),
+        "transform_contract": {
+            "row_routing": (
+                "Use separate Sql transforms with WHERE predicates for valid and rejected "
+                "row routing. SeaTunnel Filter is a field-selection transform and MUST NOT "
+                "use a condition option. The valid branch must project only target columns; "
+                "the rejected branch may additionally project error_reason. Declare both "
+                "plugins directly as repeated Sql { ... } blocks. Never wrap them in fake "
+                "plugin aliases such as SqlClean or SqlRejected."
+            ),
+            "valid_predicates": (
+                "SeaTunnel 2.3.13 Zeta rejects NOT(grouped compound predicate). Express "
+                "the valid branch with positive predicates such as value IS NOT NULL, "
+                "value > 0, and status IN (...) joined by AND."
+            ),
+            "email_masking": (
+                "For SeaTunnel 2.3.13 Zeta compatibility, mask email only with "
+                "REGEXP_REPLACE(email, '^[^@]+', '***'). Do not use POSITION, "
+                "LOCATE, or INSTR for email masking."
+            ),
+            "datetime_parsing": (
+                "SeaTunnel 2.3.13 Zeta rejects CAST(string AS TIMESTAMP) at REST job "
+                "submission even when CLI --check returns zero. Parse standard datetime "
+                "strings with TO_DATE(value, 'yyyy-MM-dd HH:mm:ss') instead."
+            ),
+            "target_schema": (
+                "For every Doris sink, its final Sql transform must explicitly project "
+                "exactly every column declared by that target profile; do not use SELECT *. "
+                "If a target has source_system but the source does not, project the lower-case "
+                "source connector type as a constant with AS source_system. Every calculated "
+                "expression must use an explicit AS alias matching the target column."
+            ),
+        },
+    }
+    if run.quality_contract is not None:
+        # 结构化约束与自然语言需求同时交给生成黑盒；后续仍会用确定性门禁核验产物。
+        metadata_context["quality_contract"] = run.quality_contract
+        metadata_context["quality_contract_policy"] = (
+            "Generate both the valid and rejected sink declared in quality_contract. "
+            "Rejected rows must include a deterministic error_reason whose CASE expression "
+            "emits every rule code exactly as declared by the contract. Apply all declared "
+            "rules to both the valid and rejected WHERE predicates. For contract_version 2, "
+            "copy every invalid_when expression exactly into the WHEN expression paired with "
+            "that rule code; do not simplify, paraphrase, or omit its NULL cases."
+        )
+    if run.incremental_contract is not None:
+        metadata_context["incremental_contract"] = run.incremental_contract
+        column = str(run.incremental_contract["column"])
+        metadata_context["incremental_contract_policy"] = (
+            "The selected JDBC source query must contain exactly these predicates: "
+            f"{column} > '{WATERMARK_LOWER_TOKEN}' AND "
+            f"{column} <= '{WATERMARK_UPPER_TOKEN}'. "
+            "Keep both tokens unchanged because the control plane injects an approved "
+            "(lower, upper] window for each scheduled run."
+        )
+    if run.row_llm_contract is not None:
+        metadata_context["row_llm_contract"] = run.row_llm_contract
+        row_llm_options = {
+            key: run.row_llm_contract[key]
+            for key in (
+                "model_provider",
+                "model",
+                "prompt",
+                "inference_columns",
+                "output_column_name",
+                "output_data_type",
             )
-            for profile in profiles
         }
-        context_by_id.update({asset.id: _file_asset_context(asset) for asset in file_assets})
-        try:
-            profile_context = [context_by_id[profile_id] for profile_id in profile_ids]
-        except KeyError as exc:
-            raise ResourceNotFound("AgentRun 引用的 Profile 已不存在") from exc
-        metadata_context: dict[str, Any] = {
-            "profiles": profile_context,
-            "pipeline_topology": _pipeline_topology(
-                profile_context,
-                run.quality_contract,
-            ),
-            "credential_policy": (
-                "Use the exact connection_placeholders and credential_placeholders supplied "
-                "for each connection; never request or emit topology or secrets."
-            ),
-            "transform_contract": {
-                "row_routing": (
-                    "Use separate Sql transforms with WHERE predicates for valid and rejected "
-                    "row routing. SeaTunnel Filter is a field-selection transform and MUST NOT "
-                    "use a condition option. The valid branch must project only target columns; "
-                    "the rejected branch may additionally project error_reason. Declare both "
-                    "plugins directly as repeated Sql { ... } blocks. Never wrap them in fake "
-                    "plugin aliases such as SqlClean or SqlRejected."
-                ),
-                "valid_predicates": (
-                    "SeaTunnel 2.3.13 Zeta rejects NOT(grouped compound predicate). Express "
-                    "the valid branch with positive predicates such as value IS NOT NULL, "
-                    "value > 0, and status IN (...) joined by AND."
-                ),
-                "email_masking": (
-                    "For SeaTunnel 2.3.13 Zeta compatibility, mask email only with "
-                    "REGEXP_REPLACE(email, '^[^@]+', '***'). Do not use POSITION, "
-                    "LOCATE, or INSTR for email masking."
-                ),
-                "datetime_parsing": (
-                    "SeaTunnel 2.3.13 Zeta rejects CAST(string AS TIMESTAMP) at REST job "
-                    "submission even when CLI --check returns zero. Parse standard datetime "
-                    "strings with TO_DATE(value, 'yyyy-MM-dd HH:mm:ss') instead."
-                ),
-                "target_schema": (
-                    "For every Doris sink, its final Sql transform must explicitly project "
-                    "exactly every column declared by that target profile; do not use SELECT *. "
-                    "If a target has source_system but the source does not, project the lower-case "
-                    "source connector type as a constant with AS source_system. Every calculated "
-                    "expression must use an explicit AS alias matching the target column."
-                ),
+        if run.row_llm_contract.get("api_path"):
+            row_llm_options["api_path"] = run.row_llm_contract["api_path"]
+        metadata_context["row_llm_contract_policy"] = {
+            "plugin": "LLM",
+            "single_block_only": True,
+            "required_options": {
+                **row_llm_options,
+                "api_key": ROW_LLM_API_KEY_TOKEN,
+                "plugin_input": "the selected source or a deterministic upstream route",
+                "plugin_output": "row_llm_enriched",
             },
+            "egress_policy": (
+                "Send exactly inference_columns, never all columns. Do not add custom "
+                "headers, request bodies, response parsers, another endpoint, or another "
+                "LLM block. A downstream transform or sink must consume row_llm_enriched."
+            ),
+            "rate_policy": (
+                "Set env.read_limit.rows_per_second to a positive integer no greater than "
+                f"{run.row_llm_contract['rows_per_second']}."
+            ),
         }
-        if run.quality_contract is not None:
-            # 结构化约束与自然语言需求同时交给生成黑盒；后续仍会用确定性门禁核验产物。
-            metadata_context["quality_contract"] = run.quality_contract
-            metadata_context["quality_contract_policy"] = (
-                "Generate both the valid and rejected sink declared in quality_contract. "
-                "Rejected rows must include a deterministic error_reason whose CASE expression "
-                "emits every rule code exactly as declared by the contract. Apply all declared "
-                "rules to both the valid and rejected WHERE predicates. For contract_version 2, "
-                "copy every invalid_when expression exactly into the WHEN expression paired with "
-                "that rule code; do not simplify, paraphrase, or omit its NULL cases."
-            )
-        if run.incremental_contract is not None:
-            metadata_context["incremental_contract"] = run.incremental_contract
-            column = str(run.incremental_contract["column"])
-            metadata_context["incremental_contract_policy"] = (
-                "The selected JDBC source query must contain exactly these predicates: "
-                f"{column} > '{WATERMARK_LOWER_TOKEN}' AND "
-                f"{column} <= '{WATERMARK_UPPER_TOKEN}'. "
-                "Keep both tokens unchanged because the control plane injects an approved "
-                "(lower, upper] window for each scheduled run."
-            )
-        if run.row_llm_contract is not None:
-            metadata_context["row_llm_contract"] = run.row_llm_contract
-            row_llm_options = {
-                key: run.row_llm_contract[key]
-                for key in (
-                    "model_provider",
-                    "model",
-                    "prompt",
-                    "inference_columns",
-                    "output_column_name",
-                    "output_data_type",
-                )
-            }
-            if run.row_llm_contract.get("api_path"):
-                row_llm_options["api_path"] = run.row_llm_contract["api_path"]
-            metadata_context["row_llm_contract_policy"] = {
-                "plugin": "LLM",
-                "single_block_only": True,
-                "required_options": {
-                    **row_llm_options,
-                    "api_key": ROW_LLM_API_KEY_TOKEN,
-                    "plugin_input": "the selected source or a deterministic upstream route",
-                    "plugin_output": "row_llm_enriched",
-                },
-                "egress_policy": (
-                    "Send exactly inference_columns, never all columns. Do not add custom "
-                    "headers, request bodies, response parsers, another endpoint, or another "
-                    "LLM block. A downstream transform or sink must consume row_llm_enriched."
-                ),
-                "rate_policy": (
-                    "Set env.read_limit.rows_per_second to a positive integer no greater than "
-                    f"{run.row_llm_contract['rows_per_second']}."
-                ),
-            }
-        return run, version.requirement, metadata_context
+    return run, version.requirement, metadata_context
 ```
 <!-- COURSEWARE_SOURCE_END source="src/etl_agent/application/agent_runs.py::AgentRunService.generation_input" -->
 
@@ -10588,77 +10571,75 @@ async def get_pipeline_design(
 
 <!-- COURSEWARE_SOURCE_BEGIN source="src/etl_agent/application/approvals.py::ApprovalService.decide" -->
 ```python
-    async def decide(
-        self,
-        session: AsyncSession,
-        *,
-        approval_id: uuid.UUID,
-        actor_id: uuid.UUID,
-        decision: ApprovalDecisionValue,
-        reason: str,
-        trace_id: str | None = None,
-    ) -> ApprovalRequest:
-        """在审批应用服务中执行权限隔离的审批决策；作为业务入口，
-        统一维护该步骤的输入校验、状态约束和异常语义。
-        """
-        statement = (
-            select(ApprovalRequest).where(ApprovalRequest.id == approval_id).with_for_update()
-        )
-        approval = (await session.execute(statement)).scalar_one_or_none()
-        if approval is None:
-            raise ResourceNotFound("审批单不存在")
-        if approval.status is not ApprovalStatus.PENDING:
-            raise VersionConflict("审批单已经处理，不能重复决策")
-        if approval.requested_by == actor_id:
-            raise PermissionDenied("审批人不能与提交人相同，请由独立审批人处理")
+async def decide(
+    self,
+    session: AsyncSession,
+    *,
+    approval_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    decision: ApprovalDecisionValue,
+    reason: str,
+    trace_id: str | None = None,
+) -> ApprovalRequest:
+    """在审批应用服务中执行权限隔离的审批决策；作为业务入口，
+    统一维护该步骤的输入校验、状态约束和异常语义。
+    """
+    statement = select(ApprovalRequest).where(ApprovalRequest.id == approval_id).with_for_update()
+    approval = (await session.execute(statement)).scalar_one_or_none()
+    if approval is None:
+        raise ResourceNotFound("审批单不存在")
+    if approval.status is not ApprovalStatus.PENDING:
+        raise VersionConflict("审批单已经处理，不能重复决策")
+    if approval.requested_by == actor_id:
+        raise PermissionDenied("审批人不能与提交人相同，请由独立审批人处理")
 
-        version = await self._get_version_for_update(session, approval.pipeline_version_id)
-        project_id = await self._project_id(session, version.pipeline_id)
-        await self._require_role(
-            session, project_id, actor_id, {ProjectRole.ADMIN, ProjectRole.APPROVER}
-        )
+    version = await self._get_version_for_update(session, approval.pipeline_version_id)
+    project_id = await self._project_id(session, version.pipeline_id)
+    await self._require_role(
+        session, project_id, actor_id, {ProjectRole.ADMIN, ProjectRole.APPROVER}
+    )
 
-        # 审批绑定提交时的产物哈希，防止审核页面打开后配置被静默替换。
-        if version.artifact_sha256 != approval.artifact_sha256:
-            raise VersionConflict("版本产物已变化，请作废当前审批并重新提交")
+    # 审批绑定提交时的产物哈希，防止审核页面打开后配置被静默替换。
+    if version.artifact_sha256 != approval.artifact_sha256:
+        raise VersionConflict("版本产物已变化，请作废当前审批并重新提交")
 
-        target = (
-            PipelineVersionStatus.APPROVED
-            if decision is ApprovalDecisionValue.APPROVE
-            else PipelineVersionStatus.REJECTED
-        )
-        require_pipeline_transition(version.status, target)
-        before = {"status": version.status.value, "lock_version": version.lock_version}
-        version.status = target
-        version.lock_version += 1
-        approval.status = (
-            ApprovalStatus.APPROVED
-            if decision is ApprovalDecisionValue.APPROVE
-            else ApprovalStatus.REJECTED
-        )
-        approval.decided_by = actor_id
-        approval.reason = reason
-        approval.decided_at = datetime.now(UTC)
+    target = (
+        PipelineVersionStatus.APPROVED
+        if decision is ApprovalDecisionValue.APPROVE
+        else PipelineVersionStatus.REJECTED
+    )
+    require_pipeline_transition(version.status, target)
+    before = {"status": version.status.value, "lock_version": version.lock_version}
+    version.status = target
+    version.lock_version += 1
+    approval.status = (
+        ApprovalStatus.APPROVED
+        if decision is ApprovalDecisionValue.APPROVE
+        else ApprovalStatus.REJECTED
+    )
+    approval.decided_by = actor_id
+    approval.reason = reason
+    approval.decided_at = datetime.now(UTC)
 
-        session.add(
-            AuditEvent(
-                actor_id=actor_id,
-                project_id=project_id,
-                action=f"approval.{approval.status.value.lower()}",
-                resource_type="ApprovalRequest",
-                resource_id=approval.id,
-                before=before,
-                after={
-                    "status": version.status.value,
-                    "lock_version": version.lock_version,
-                    "artifact_sha256": version.artifact_sha256,
-                },
-                reason=reason,
-                trace_id=trace_id,
-            )
+    session.add(
+        AuditEvent(
+            actor_id=actor_id,
+            project_id=project_id,
+            action=f"approval.{approval.status.value.lower()}",
+            resource_type="ApprovalRequest",
+            resource_id=approval.id,
+            before=before,
+            after={
+                "status": version.status.value,
+                "lock_version": version.lock_version,
+                "artifact_sha256": version.artifact_sha256,
+            },
+            reason=reason,
+            trace_id=trace_id,
         )
-        await session.flush()
-        return approval
+    )
+    await session.flush()
+    return approval
 ```
 <!-- COURSEWARE_SOURCE_END source="src/etl_agent/application/approvals.py::ApprovalService.decide" -->
 
@@ -11596,10 +11577,7 @@ async def _monitor_execution(run_id: uuid.UUID, trace_id: str | None) -> tuple[s
                 await service.mark_cancelled(session, run_id=run_id, trace_id=trace_id)
             elif snapshot.status != "FINISHED":
                 await service.mark_running(session, run_id=run_id, trace_id=trace_id)
-    if (
-        supervision.cancel_required
-        and snapshot.status not in {"FINISHED", "FAILED", "CANCELED"}
-    ):
+    if supervision.cancel_required and snapshot.status not in {"FINISHED", "FAILED", "CANCELED"}:
         await _apply_supervisor_mitigation(
             decision_id=supervision.id,
             job_id=job_id,
@@ -14595,153 +14573,151 @@ P0 需要两个不同自然人分别占用数据审批和安全审批职责。�
 
 <!-- COURSEWARE_SOURCE_BEGIN source="src/etl_agent/application/execution_harness.py::ExecutionHarnessService.commit" -->
 ```python
-    async def commit(
-        self,
-        session: AsyncSession,
-        *,
-        preparation_id: uuid.UUID,
-        actor_id: uuid.UUID,
-        trace_id: str | None = None,
-    ) -> ExecutionRun:
-        """验签并一次性消费最小能力令牌，在同一事务中创建 Run 与 Outbox。"""
-        preparation = await self._get_locked(session, preparation_id)
-        if preparation.status is ExecutionPreparationStatus.COMMITTED:
-            existing = await session.scalar(
-                select(ExecutionRun).where(ExecutionRun.harness_preparation_id == preparation.id)
-            )
-            if existing is None:
-                raise VersionConflict("Preparation 已提交但执行记录缺失")
-            return existing
-        self._expire_if_needed(preparation)
-        if preparation.status is ExecutionPreparationStatus.EXPIRED:
-            raise VersionConflict("Preparation 已过期，请重新发起")
-        if preparation.status is not ExecutionPreparationStatus.READY:
-            raise VersionConflict("Preparation 尚未满足全部审批要求")
-        await self._access.require_any_role(
-            session,
-            project_id=preparation.project_id,
-            user_id=actor_id,
-            allowed={HarnessRole.OPERATOR},
+async def commit(
+    self,
+    session: AsyncSession,
+    *,
+    preparation_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    trace_id: str | None = None,
+) -> ExecutionRun:
+    """验签并一次性消费最小能力令牌，在同一事务中创建 Run 与 Outbox。"""
+    preparation = await self._get_locked(session, preparation_id)
+    if preparation.status is ExecutionPreparationStatus.COMMITTED:
+        existing = await session.scalar(
+            select(ExecutionRun).where(ExecutionRun.harness_preparation_id == preparation.id)
         )
-        if not await self._approvals_satisfied(session, preparation):
-            raise PermissionDenied("审批证据不完整，禁止 Commit")
-        if preparation.policy_bundle_version != self._policy_bundle_version:
-            raise PermissionDenied("Preparation 使用的策略包已不是当前版本")
-        await self._require_preparation_artifact_unchanged(session, preparation)
+        if existing is None:
+            raise VersionConflict("Preparation 已提交但执行记录缺失")
+        return existing
+    self._expire_if_needed(preparation)
+    if preparation.status is ExecutionPreparationStatus.EXPIRED:
+        raise VersionConflict("Preparation 已过期，请重新发起")
+    if preparation.status is not ExecutionPreparationStatus.READY:
+        raise VersionConflict("Preparation 尚未满足全部审批要求")
+    await self._access.require_any_role(
+        session,
+        project_id=preparation.project_id,
+        user_id=actor_id,
+        allowed={HarnessRole.OPERATOR},
+    )
+    if not await self._approvals_satisfied(session, preparation):
+        raise PermissionDenied("审批证据不完整，禁止 Commit")
+    if preparation.policy_bundle_version != self._policy_bundle_version:
+        raise PermissionDenied("Preparation 使用的策略包已不是当前版本")
+    await self._require_preparation_artifact_unchanged(session, preparation)
 
-        intent = ToolIntent.model_validate(preparation.intent)
-        context = PolicyEvaluationContext.model_validate(preparation.policy_context)
-        policy_decision = await self._policy_decision(session, preparation)
-        prepared = PreparedToolInvocation(
-            invocation_id=preparation.id,
-            project_id=preparation.project_id,
-            actor_id=preparation.requested_by,
-            tool_name=preparation.tool_name,
-            tool_version=preparation.tool_version,
-            input_fingerprint=preparation.input_fingerprint,
-            resource_fingerprint=preparation.resource_fingerprint,
-            policy_decision=policy_decision,
-        )
-        now = datetime.now(UTC)
-        token_expiry = min(_as_utc(preparation.expires_at), now + self._capability_ttl)
-        if token_expiry <= now:
-            preparation.status = ExecutionPreparationStatus.EXPIRED
-            raise VersionConflict("Preparation 已过期，请重新发起")
-        claims = CapabilityClaims(
-            project_id=preparation.project_id,
-            subject_id=preparation.requested_by,
-            environment=preparation.environment,
-            policy_decision_id=preparation.policy_decision_id,
-            policy_bundle_version=preparation.policy_bundle_version,
-            tool_name=preparation.tool_name,
-            tool_version=preparation.tool_version,
-            input_fingerprint=preparation.input_fingerprint,
-            resource_fingerprint=preparation.resource_fingerprint,
-            artifact_sha256=preparation.artifact_sha256,
-            supervision_contract_sha256=str(
-                preparation.impact_report["supervision_contract_sha256"]
-            ),
-            data_classification_report_sha256=str(
-                preparation.impact_report["data_classification_report_sha256"]
-            ),
-            allowed_mitigations=list(
-                preparation.impact_report["runtime_supervision_contract"]["allowed_mitigations"]
-            ),
-            effects=intent.effects,
-            issued_at=now,
-            expires_at=token_expiry,
-            single_use=True,
-        )
-        token = self._token_issuer.issue(claims)
-        claims_signature = self._signer.sign_detached(canonical_json_bytes(claims))
-        grant = HarnessCapabilityGrant(
-            token_id=claims.token_id,
-            preparation_id=preparation.id,
-            token_sha256=hashlib.sha256(token.encode("ascii")).hexdigest(),
-            key_id=self._signer.key_id,
-            claims=claims.model_dump(mode="json"),
-            claims_signature_algorithm=claims_signature.algorithm,
-            claims_signature_value=claims_signature.value,
-            subject_id=claims.subject_id,
-            issued_at=claims.issued_at,
-            expires_at=claims.expires_at,
-        )
-        session.add(grant)
-        await session.flush()
+    intent = ToolIntent.model_validate(preparation.intent)
+    context = PolicyEvaluationContext.model_validate(preparation.policy_context)
+    policy_decision = await self._policy_decision(session, preparation)
+    prepared = PreparedToolInvocation(
+        invocation_id=preparation.id,
+        project_id=preparation.project_id,
+        actor_id=preparation.requested_by,
+        tool_name=preparation.tool_name,
+        tool_version=preparation.tool_version,
+        input_fingerprint=preparation.input_fingerprint,
+        resource_fingerprint=preparation.resource_fingerprint,
+        policy_decision=policy_decision,
+    )
+    now = datetime.now(UTC)
+    token_expiry = min(_as_utc(preparation.expires_at), now + self._capability_ttl)
+    if token_expiry <= now:
+        preparation.status = ExecutionPreparationStatus.EXPIRED
+        raise VersionConflict("Preparation 已过期，请重新发起")
+    claims = CapabilityClaims(
+        project_id=preparation.project_id,
+        subject_id=preparation.requested_by,
+        environment=preparation.environment,
+        policy_decision_id=preparation.policy_decision_id,
+        policy_bundle_version=preparation.policy_bundle_version,
+        tool_name=preparation.tool_name,
+        tool_version=preparation.tool_version,
+        input_fingerprint=preparation.input_fingerprint,
+        resource_fingerprint=preparation.resource_fingerprint,
+        artifact_sha256=preparation.artifact_sha256,
+        supervision_contract_sha256=str(preparation.impact_report["supervision_contract_sha256"]),
+        data_classification_report_sha256=str(
+            preparation.impact_report["data_classification_report_sha256"]
+        ),
+        allowed_mitigations=list(
+            preparation.impact_report["runtime_supervision_contract"]["allowed_mitigations"]
+        ),
+        effects=intent.effects,
+        issued_at=now,
+        expires_at=token_expiry,
+        single_use=True,
+    )
+    token = self._token_issuer.issue(claims)
+    claims_signature = self._signer.sign_detached(canonical_json_bytes(claims))
+    grant = HarnessCapabilityGrant(
+        token_id=claims.token_id,
+        preparation_id=preparation.id,
+        token_sha256=hashlib.sha256(token.encode("ascii")).hexdigest(),
+        key_id=self._signer.key_id,
+        claims=claims.model_dump(mode="json"),
+        claims_signature_algorithm=claims_signature.algorithm,
+        claims_signature_value=claims_signature.value,
+        subject_id=claims.subject_id,
+        issued_at=claims.issued_at,
+        expires_at=claims.expires_at,
+    )
+    session.add(grant)
+    await session.flush()
 
-        handler = _ExecutionCommitHandler(
-            session=session,
-            preparation=preparation,
-            trace_id=trace_id,
-        )
-        broker = self._new_broker(
-            decision_point=self._decision_point,
-            token_verifier=self._token_verifier,
-            replay_guard=_PersistentTokenReplayGuard(session, consumed_by=actor_id),
-            handler=handler,
-        )
-        result = await broker.execute(
-            prepared=prepared,
-            intent=intent,
-            context=context,
-            raw_input=preparation.prepared_input,
-            capability_token=token,
-        )
-        if not isinstance(result, ExecutePipelineResult):
-            raise VersionConflict("执行工具返回了未知结果")
-        run = await session.get(ExecutionRun, result.run_id)
-        if run is None:
-            raise VersionConflict("执行工具未创建 ExecutionRun")
-        grant.execution_run_id = run.id
-        run.supervision_contract_sha256 = claims.supervision_contract_sha256
-        preparation.status = ExecutionPreparationStatus.COMMITTED
-        preparation.committed_by = actor_id
-        preparation.committed_at = now
-        preparation.lock_version += 1
-        await self._ledger.append(
-            session,
-            project_id=preparation.project_id,
-            stream_type="execution-preparation",
-            stream_key=str(preparation.id),
-            event_type="COMMITTED",
-            risk_level=RiskLevel(preparation.risk_level),
-            payload={
-                "execution_run_id": str(run.id),
-                "outbox_id": str(result.outbox_id),
-                "capability_id": str(claims.token_id),
-                "capability_sha256": grant.token_sha256,
-                "committed_by": str(actor_id),
-                "artifact_sha256": preparation.artifact_sha256,
-                "policy_bundle_version": preparation.policy_bundle_version,
-            },
-            actor_id=actor_id,
-            policy_decision=policy_decision,
-            checkpoint=True,
-            trace_id=trace_id,
-            occurred_at=now,
-        )
-        await session.flush()
-        return run
+    handler = _ExecutionCommitHandler(
+        session=session,
+        preparation=preparation,
+        trace_id=trace_id,
+    )
+    broker = self._new_broker(
+        decision_point=self._decision_point,
+        token_verifier=self._token_verifier,
+        replay_guard=_PersistentTokenReplayGuard(session, consumed_by=actor_id),
+        handler=handler,
+    )
+    result = await broker.execute(
+        prepared=prepared,
+        intent=intent,
+        context=context,
+        raw_input=preparation.prepared_input,
+        capability_token=token,
+    )
+    if not isinstance(result, ExecutePipelineResult):
+        raise VersionConflict("执行工具返回了未知结果")
+    run = await session.get(ExecutionRun, result.run_id)
+    if run is None:
+        raise VersionConflict("执行工具未创建 ExecutionRun")
+    grant.execution_run_id = run.id
+    run.supervision_contract_sha256 = claims.supervision_contract_sha256
+    preparation.status = ExecutionPreparationStatus.COMMITTED
+    preparation.committed_by = actor_id
+    preparation.committed_at = now
+    preparation.lock_version += 1
+    await self._ledger.append(
+        session,
+        project_id=preparation.project_id,
+        stream_type="execution-preparation",
+        stream_key=str(preparation.id),
+        event_type="COMMITTED",
+        risk_level=RiskLevel(preparation.risk_level),
+        payload={
+            "execution_run_id": str(run.id),
+            "outbox_id": str(result.outbox_id),
+            "capability_id": str(claims.token_id),
+            "capability_sha256": grant.token_sha256,
+            "committed_by": str(actor_id),
+            "artifact_sha256": preparation.artifact_sha256,
+            "policy_bundle_version": preparation.policy_bundle_version,
+        },
+        actor_id=actor_id,
+        policy_decision=policy_decision,
+        checkpoint=True,
+        trace_id=trace_id,
+        occurred_at=now,
+    )
+    await session.flush()
+    return run
 ```
 <!-- COURSEWARE_SOURCE_END source="src/etl_agent/application/execution_harness.py::ExecutionHarnessService.commit" -->
 
@@ -16086,8 +16062,7 @@ async def claim_committed_side_effect(
             select(HarnessSideEffectPreparation, HarnessSideEffectCapabilityGrant)
             .join(
                 HarnessSideEffectCapabilityGrant,
-                HarnessSideEffectCapabilityGrant.preparation_id
-                == HarnessSideEffectPreparation.id,
+                HarnessSideEffectCapabilityGrant.preparation_id == HarnessSideEffectPreparation.id,
             )
             .where(
                 HarnessSideEffectPreparation.operation == operation,
@@ -16516,94 +16491,92 @@ Worker 执行前再次检查最终表仍带来源 Run 的发布标记、回滚�
 
 <!-- COURSEWARE_SOURCE_BEGIN source="src/etl_agent/application/cleanup.py::RollbackCleanupService.request" -->
 ```python
-    async def request(
-        self,
-        session: AsyncSession,
-        *,
-        run_id: uuid.UUID,
-        actor_id: uuid.UUID,
-        reason: str,
-        retention_days: int,
-        trace_id: str | None = None,
-        now: datetime | None = None,
-    ) -> RollbackCleanupRequest:
-        """
-        为已超过保留期的发布 Run 创建清理申请。
+async def request(
+    self,
+    session: AsyncSession,
+    *,
+    run_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    reason: str,
+    retention_days: int,
+    trace_id: str | None = None,
+    now: datetime | None = None,
+) -> RollbackCleanupRequest:
+    """
+    为已超过保留期的发布 Run 创建清理申请。
 
-        来源 ExecutionRun 行锁同时作为回滚与清理的互斥锁，避免两个审批流程并发创建后
-        分别操作同一张 Doris 保留表。
-        """
-        run, _plan, project_id = await self._run_context(session, run_id, lock=True)
-        await self._require_role(
-            session,
-            project_id,
-            actor_id,
-            {ProjectRole.ADMIN, ProjectRole.DATA_ENGINEER},
+    来源 ExecutionRun 行锁同时作为回滚与清理的互斥锁，避免两个审批流程并发创建后
+    分别操作同一张 Doris 保留表。
+    """
+    run, _plan, project_id = await self._run_context(session, run_id, lock=True)
+    await self._require_role(
+        session,
+        project_id,
+        actor_id,
+        {ProjectRole.ADMIN, ProjectRole.DATA_ENGINEER},
+    )
+    if run.status is not ExecutionStatus.SUCCEEDED:
+        raise VersionConflict("只有成功完成原子发布的执行记录可以申请清理")
+
+    existing = await session.scalar(
+        select(RollbackCleanupRequest)
+        .where(
+            RollbackCleanupRequest.source_run_id == run_id,
+            RollbackCleanupRequest.status.in_({*_ACTIVE_CLEANUP_STATUSES, CleanupStatus.SUCCEEDED}),
         )
-        if run.status is not ExecutionStatus.SUCCEEDED:
-            raise VersionConflict("只有成功完成原子发布的执行记录可以申请清理")
+        .order_by(RollbackCleanupRequest.created_at.desc())
+    )
+    if existing is not None:
+        if existing.status is CleanupStatus.SUCCEEDED:
+            raise VersionConflict("该回滚版本已经清理，不能重复申请")
+        return existing
 
-        existing = await session.scalar(
-            select(RollbackCleanupRequest)
-            .where(
-                RollbackCleanupRequest.source_run_id == run_id,
-                RollbackCleanupRequest.status.in_(
-                    {*_ACTIVE_CLEANUP_STATUSES, CleanupStatus.SUCCEEDED}
-                ),
-            )
-            .order_by(RollbackCleanupRequest.created_at.desc())
+    active_rollback = await session.scalar(
+        select(RollbackRequest.id).where(
+            RollbackRequest.source_run_id == run_id,
+            RollbackRequest.status.in_(_ACTIVE_ROLLBACK_STATUSES),
         )
-        if existing is not None:
-            if existing.status is CleanupStatus.SUCCEEDED:
-                raise VersionConflict("该回滚版本已经清理，不能重复申请")
-            return existing
+    )
+    if active_rollback is not None:
+        raise VersionConflict("该发布存在进行中的回滚申请，不能同时申请清理")
 
-        active_rollback = await session.scalar(
-            select(RollbackRequest.id).where(
-                RollbackRequest.source_run_id == run_id,
-                RollbackRequest.status.in_(_ACTIVE_ROLLBACK_STATUSES),
-            )
+    event = await self._published_event(session, run_id)
+    published_at = _as_utc(event.occurred_at)
+    retention_until = published_at + timedelta(days=retention_days)
+    effective_now = _as_utc(now or datetime.now(UTC))
+    if effective_now < retention_until:
+        raise VersionConflict(
+            f"回滚版本仍在保留期内，最早可于 {retention_until.isoformat()} 申请清理"
         )
-        if active_rollback is not None:
-            raise VersionConflict("该发布存在进行中的回滚申请，不能同时申请清理")
+    database, target, rollback = self._publish_targets(event.details)
 
-        event = await self._published_event(session, run_id)
-        published_at = _as_utc(event.occurred_at)
-        retention_until = published_at + timedelta(days=retention_days)
-        effective_now = _as_utc(now or datetime.now(UTC))
-        if effective_now < retention_until:
-            raise VersionConflict(
-                f"回滚版本仍在保留期内，最早可于 {retention_until.isoformat()} 申请清理"
-            )
-        database, target, rollback = self._publish_targets(event.details)
-
-        request = RollbackCleanupRequest(
-            source_run_id=run_id,
-            database_name=database,
-            target_table=target,
-            rollback_table=rollback,
-            published_at=published_at,
-            retention_until=retention_until,
-            requested_by=actor_id,
+    request = RollbackCleanupRequest(
+        source_run_id=run_id,
+        database_name=database,
+        target_table=target,
+        rollback_table=rollback,
+        published_at=published_at,
+        retention_until=retention_until,
+        requested_by=actor_id,
+        reason=reason,
+    )
+    session.add(request)
+    await session.flush()
+    session.add(
+        AuditEvent(
+            actor_id=actor_id,
+            project_id=project_id,
+            action="rollback_cleanup.requested",
+            resource_type="RollbackCleanupRequest",
+            resource_id=request.id,
+            before=None,
+            after=self._state(request),
             reason=reason,
+            trace_id=trace_id,
         )
-        session.add(request)
-        await session.flush()
-        session.add(
-            AuditEvent(
-                actor_id=actor_id,
-                project_id=project_id,
-                action="rollback_cleanup.requested",
-                resource_type="RollbackCleanupRequest",
-                resource_id=request.id,
-                before=None,
-                after=self._state(request),
-                reason=reason,
-                trace_id=trace_id,
-            )
-        )
-        await session.flush()
-        return request
+    )
+    await session.flush()
+    return request
 ```
 <!-- COURSEWARE_SOURCE_END source="src/etl_agent/application/cleanup.py::RollbackCleanupService.request" -->
 
@@ -17806,142 +17779,140 @@ Token 过期后仍允许对已经合法启动的作业实施减损，因为取�
 
 <!-- COURSEWARE_SOURCE_BEGIN source="src/etl_agent/application/runtime_supervision.py::RuntimeSupervisionService.observe" -->
 ```python
-    async def observe(
-        self,
-        session: AsyncSession,
-        *,
-        run_id: uuid.UUID,
-        snapshot: JobSnapshot,
-        key_ring: Ed25519PublicKeyRing,
-        trace_id: str | None = None,
-        observed_at: datetime | None = None,
-    ) -> RuntimeSupervisionSnapshot:
-        """验签后评估一个引擎快照，并与运行状态和哈希链证据原子提交。"""
-        await require_runtime_supervision_authorization(
-            session,
-            run_id=run_id,
-            key_ring=key_ring,
+async def observe(
+    self,
+    session: AsyncSession,
+    *,
+    run_id: uuid.UUID,
+    snapshot: JobSnapshot,
+    key_ring: Ed25519PublicKeyRing,
+    trace_id: str | None = None,
+    observed_at: datetime | None = None,
+) -> RuntimeSupervisionSnapshot:
+    """验签后评估一个引擎快照，并与运行状态和哈希链证据原子提交。"""
+    await require_runtime_supervision_authorization(
+        session,
+        run_id=run_id,
+        key_ring=key_ring,
+    )
+    row = (
+        await session.execute(
+            select(ExecutionRun, ExecutionPreparation)
+            .join(
+                ExecutionPreparation,
+                ExecutionPreparation.id == ExecutionRun.harness_preparation_id,
+            )
+            .where(ExecutionRun.id == run_id)
+            .with_for_update()
         )
-        row = (
-            await session.execute(
-                select(ExecutionRun, ExecutionPreparation)
-                .join(
-                    ExecutionPreparation,
-                    ExecutionPreparation.id == ExecutionRun.harness_preparation_id,
+    ).one_or_none()
+    if row is None:
+        raise ResourceNotFound("执行记录缺少可监督的 Preparation")
+    run: ExecutionRun = row[0]
+    preparation: ExecutionPreparation = row[1]
+    raw_contract = preparation.impact_report.get("runtime_supervision_contract")
+    if not isinstance(raw_contract, dict):
+        raise PermissionDenied("Preparation 缺少运行监督契约")
+    contract = RuntimeSupervisionContract.model_validate(raw_contract)
+    contract_sha256 = canonical_sha256(contract)
+    timestamp = observed_at or datetime.now(UTC)
+    started_at = run.started_at or run.submitted_at or run.created_at
+    decision = self._supervisor.evaluate(
+        snapshot=snapshot,
+        budget=contract.budget,
+        contract_sha256=contract_sha256,
+        started_at=started_at,
+        observed_at=timestamp,
+    )
+    if decision.action is not RuntimeMitigation.CONTINUE and (
+        decision.action not in contract.allowed_mitigations
+    ):
+        raise PermissionDenied("监督决定请求了契约未授权的减损动作")
+    sequence = (
+        int(
+            await session.scalar(
+                select(func.coalesce(func.max(RuntimeSupervisionSnapshot.sequence), 0)).where(
+                    RuntimeSupervisionSnapshot.run_id == run_id
                 )
-                .where(ExecutionRun.id == run_id)
-                .with_for_update()
             )
-        ).one_or_none()
-        if row is None:
-            raise ResourceNotFound("执行记录缺少可监督的 Preparation")
-        run: ExecutionRun = row[0]
-        preparation: ExecutionPreparation = row[1]
-        raw_contract = preparation.impact_report.get("runtime_supervision_contract")
-        if not isinstance(raw_contract, dict):
-            raise PermissionDenied("Preparation 缺少运行监督契约")
-        contract = RuntimeSupervisionContract.model_validate(raw_contract)
-        contract_sha256 = canonical_sha256(contract)
-        timestamp = observed_at or datetime.now(UTC)
-        started_at = run.started_at or run.submitted_at or run.created_at
-        decision = self._supervisor.evaluate(
-            snapshot=snapshot,
-            budget=contract.budget,
-            contract_sha256=contract_sha256,
-            started_at=started_at,
-            observed_at=timestamp,
+            or 0
         )
-        if decision.action is not RuntimeMitigation.CONTINUE and (
-            decision.action not in contract.allowed_mitigations
-        ):
-            raise PermissionDenied("监督决定请求了契约未授权的减损动作")
-        sequence = (
-            int(
-                await session.scalar(
-                    select(func.coalesce(func.max(RuntimeSupervisionSnapshot.sequence), 0)).where(
-                        RuntimeSupervisionSnapshot.run_id == run_id
-                    )
-                )
-                or 0
-            )
-            + 1
-        )
-        snapshot_document = {
-            "run_id": str(run_id),
-            "sequence": sequence,
-            "observed_at": timestamp,
-            "engine_status": snapshot.status,
-            "decision": decision.model_dump(mode="json"),
-        }
-        persisted = RuntimeSupervisionSnapshot(
-            id=decision.id,
-            run_id=run_id,
-            sequence=sequence,
-            observed_at=timestamp,
-            engine_status=snapshot.status[:32],
-            action=decision.action.value,
-            risk_level=decision.risk_level.value,
-            cancel_required=decision.cancel_required,
-            block_publish=decision.block_publish,
-            next_poll_seconds=decision.next_poll_seconds,
-            observed=decision.observed,
-            budget=decision.budget.model_dump(mode="json"),
-            rule_matches=[item.model_dump(mode="json") for item in decision.rule_matches],
-            contract_sha256=contract_sha256,
-            snapshot_sha256=canonical_sha256(snapshot_document),
-            mitigation_status=(
-                RuntimeMitigationStatus.PENDING
-                if decision.cancel_required
-                else RuntimeMitigationStatus.NOT_REQUIRED
-            ),
-        )
-        session.add(persisted)
-        run.supervision_action = decision.action.value
-        if decision.block_publish:
-            run.quarantined_at = run.quarantined_at or timestamp
-            run.quarantine_reason = "; ".join(match.message for match in decision.rule_matches)[
-                :2000
-            ]
-        session.add(
-            ExecutionEvent(
-                run_id=run.id,
-                level=("WARN" if decision.action is not RuntimeMitigation.CONTINUE else "INFO"),
-                stage="SUPERVISOR",
-                event_type="RUNTIME_SUPERVISION_DECISION",
-                message=f"运行监督决定：{decision.action.value}",
-                details={
-                    "decision_id": str(decision.id),
-                    "risk_level": decision.risk_level.value,
-                    "contract_sha256": contract_sha256,
-                    "snapshot_sha256": persisted.snapshot_sha256,
-                    "rule_ids": [match.rule_id for match in decision.rule_matches],
-                },
-            )
-        )
-        await self._ledger.append(
-            session,
-            project_id=preparation.project_id,
-            stream_type="execution-run",
-            stream_key=str(run.id),
+        + 1
+    )
+    snapshot_document = {
+        "run_id": str(run_id),
+        "sequence": sequence,
+        "observed_at": timestamp,
+        "engine_status": snapshot.status,
+        "decision": decision.model_dump(mode="json"),
+    }
+    persisted = RuntimeSupervisionSnapshot(
+        id=decision.id,
+        run_id=run_id,
+        sequence=sequence,
+        observed_at=timestamp,
+        engine_status=snapshot.status[:32],
+        action=decision.action.value,
+        risk_level=decision.risk_level.value,
+        cancel_required=decision.cancel_required,
+        block_publish=decision.block_publish,
+        next_poll_seconds=decision.next_poll_seconds,
+        observed=decision.observed,
+        budget=decision.budget.model_dump(mode="json"),
+        rule_matches=[item.model_dump(mode="json") for item in decision.rule_matches],
+        contract_sha256=contract_sha256,
+        snapshot_sha256=canonical_sha256(snapshot_document),
+        mitigation_status=(
+            RuntimeMitigationStatus.PENDING
+            if decision.cancel_required
+            else RuntimeMitigationStatus.NOT_REQUIRED
+        ),
+    )
+    session.add(persisted)
+    run.supervision_action = decision.action.value
+    if decision.block_publish:
+        run.quarantined_at = run.quarantined_at or timestamp
+        run.quarantine_reason = "; ".join(match.message for match in decision.rule_matches)[:2000]
+    session.add(
+        ExecutionEvent(
+            run_id=run.id,
+            level=("WARN" if decision.action is not RuntimeMitigation.CONTINUE else "INFO"),
+            stage="SUPERVISOR",
             event_type="RUNTIME_SUPERVISION_DECISION",
-            risk_level=decision.risk_level,
-            payload={
+            message=f"运行监督决定：{decision.action.value}",
+            details={
                 "decision_id": str(decision.id),
-                "sequence": sequence,
-                "action": decision.action.value,
+                "risk_level": decision.risk_level.value,
                 "contract_sha256": contract_sha256,
                 "snapshot_sha256": persisted.snapshot_sha256,
-                "cancel_required": decision.cancel_required,
-                "block_publish": decision.block_publish,
                 "rule_ids": [match.rule_id for match in decision.rule_matches],
             },
-            actor_id=None,
-            checkpoint=False,
-            trace_id=trace_id,
-            occurred_at=timestamp,
         )
-        await session.flush()
-        return persisted
+    )
+    await self._ledger.append(
+        session,
+        project_id=preparation.project_id,
+        stream_type="execution-run",
+        stream_key=str(run.id),
+        event_type="RUNTIME_SUPERVISION_DECISION",
+        risk_level=decision.risk_level,
+        payload={
+            "decision_id": str(decision.id),
+            "sequence": sequence,
+            "action": decision.action.value,
+            "contract_sha256": contract_sha256,
+            "snapshot_sha256": persisted.snapshot_sha256,
+            "cancel_required": decision.cancel_required,
+            "block_publish": decision.block_publish,
+            "rule_ids": [match.rule_id for match in decision.rule_matches],
+        },
+        actor_id=None,
+        checkpoint=False,
+        trace_id=trace_id,
+        occurred_at=timestamp,
+    )
+    await session.flush()
+    return persisted
 ```
 <!-- COURSEWARE_SOURCE_END source="src/etl_agent/application/runtime_supervision.py::RuntimeSupervisionService.observe" -->
 
@@ -19393,9 +19364,7 @@ def test_l0_rejects_unselected_connector_injection() -> None:
 def test_l0_rejects_plaintext_secret_in_artifact() -> None:
     """验证 HOCON 即使语法有效，也不能携带模型生成的明文数据库口令。"""
     with pytest.raises(DomainError, match="硬编码凭据"):
-        require_no_hardcoded_secrets(
-            'source { Jdbc { password = "super-secret-value" } }'
-        )
+        require_no_hardcoded_secrets('source { Jdbc { password = "super-secret-value" } }')
 ```
 <!-- COURSEWARE_SOURCE_END source="tests/simulation/test_l0_static_simulation.py::test_l0_rejects_plaintext_secret_in_artifact" -->
 
@@ -19460,11 +19429,14 @@ def test_l1_runtime_fault_matrix_selects_strongest_mitigation(
 
     assert decision.action is expected_action
     assert rule_id in {match.rule_id for match in decision.rule_matches}
-    assert decision.block_publish is (expected_action in {
-        RuntimeMitigation.PAUSE,
-        RuntimeMitigation.CANCEL,
-        RuntimeMitigation.QUARANTINE,
-    })
+    assert decision.block_publish is (
+        expected_action
+        in {
+            RuntimeMitigation.PAUSE,
+            RuntimeMitigation.CANCEL,
+            RuntimeMitigation.QUARANTINE,
+        }
+    )
 ```
 <!-- COURSEWARE_SOURCE_END source="tests/simulation/test_l1_deterministic_simulation.py::test_l1_runtime_fault_matrix_selects_strongest_mitigation" -->
 
@@ -19850,48 +19822,44 @@ stateDiagram-v2
 
 <!-- COURSEWARE_SOURCE_BEGIN source="src/etl_agent/application/safety_evolution.py::SafetyEvolutionService.decide_proposal" -->
 ```python
-    async def decide_proposal(
-        self,
-        session: AsyncSession,
-        *,
-        proposal_id: uuid.UUID,
-        actor_id: uuid.UUID,
-        approve: bool,
-        reason: str,
-        trace_id: str | None = None,
-    ) -> SafetyImprovementProposal:
-        """由独立安全审批人批准或拒绝，Agent/创建者不能裁决自己的提案。"""
-        proposal = await _proposal_for_update(session, proposal_id)
-        await self._access.require_any_role(
-            session,
-            project_id=proposal.project_id,
-            user_id=actor_id,
-            allowed=_SECURITY_ROLES,
-        )
-        if proposal.created_by == actor_id:
-            raise PermissionDenied("安全审批人不能裁决自己创建的提案")
-        if proposal.status is not SafetyProposalStatus.IN_REVIEW:
-            raise VersionConflict("只有 IN_REVIEW 提案可以裁决")
-        proposal.status = (
-            SafetyProposalStatus.APPROVED if approve else SafetyProposalStatus.REJECTED
-        )
-        proposal.decided_by = actor_id
-        proposal.decided_at = datetime.now(UTC)
-        proposal.decision_reason = reason.strip()
-        proposal.version += 1
-        await session.flush()
-        await self._append_proposal_event(
-            session,
-            proposal=proposal,
-            actor_id=actor_id,
-            event_type=(
-                "safety-proposal.approved" if approve else "safety-proposal.rejected"
-            ),
-            risk_level=RiskLevel.P1,
-            trace_id=trace_id,
-            checkpoint=True,
-        )
-        return proposal
+async def decide_proposal(
+    self,
+    session: AsyncSession,
+    *,
+    proposal_id: uuid.UUID,
+    actor_id: uuid.UUID,
+    approve: bool,
+    reason: str,
+    trace_id: str | None = None,
+) -> SafetyImprovementProposal:
+    """由独立安全审批人批准或拒绝，Agent/创建者不能裁决自己的提案。"""
+    proposal = await _proposal_for_update(session, proposal_id)
+    await self._access.require_any_role(
+        session,
+        project_id=proposal.project_id,
+        user_id=actor_id,
+        allowed=_SECURITY_ROLES,
+    )
+    if proposal.created_by == actor_id:
+        raise PermissionDenied("安全审批人不能裁决自己创建的提案")
+    if proposal.status is not SafetyProposalStatus.IN_REVIEW:
+        raise VersionConflict("只有 IN_REVIEW 提案可以裁决")
+    proposal.status = SafetyProposalStatus.APPROVED if approve else SafetyProposalStatus.REJECTED
+    proposal.decided_by = actor_id
+    proposal.decided_at = datetime.now(UTC)
+    proposal.decision_reason = reason.strip()
+    proposal.version += 1
+    await session.flush()
+    await self._append_proposal_event(
+        session,
+        proposal=proposal,
+        actor_id=actor_id,
+        event_type=("safety-proposal.approved" if approve else "safety-proposal.rejected"),
+        risk_level=RiskLevel.P1,
+        trace_id=trace_id,
+        checkpoint=True,
+    )
+    return proposal
 ```
 <!-- COURSEWARE_SOURCE_END source="src/etl_agent/application/safety_evolution.py::SafetyEvolutionService.decide_proposal" -->
 

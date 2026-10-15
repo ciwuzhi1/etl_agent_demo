@@ -1,0 +1,2 @@
+{"order_id":2001,"customer_name":"Grace","amount":39.5,"status":"PAID","email":"grace@example.com","created_at":"2026-08-05 10:00:00"}
+{"order_id":2002,"customer_name":"Invalid","amount":-1.0,"status":"PAID","email":"invalid@example.com","created_at":"2026-08-05 11:00:00"}

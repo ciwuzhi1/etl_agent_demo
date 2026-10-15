@@ -19,6 +19,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -42,10 +43,11 @@ from etl_agent.domain.enums import (
     DataEndpointRole,
     DataProfileStatus,
     ExecutionStatus,
+    FileAssetFormat,
     PipelineVersionStatus,
     ProjectRole,
 )
-from etl_agent.domain.harness import HarnessRole
+from etl_agent.domain.harness import HarnessApprovalValue, HarnessOutboxStatus, HarnessRole
 from etl_agent.infrastructure.database import Base
 
 
@@ -355,6 +357,78 @@ class ExecutionRun(Base, TimestampMixin):
     seatunnel_job_id: Mapped[str | None] = mapped_column(String(255))
     requested_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"))
     error: Mapped[str | None] = mapped_column(Text)
+    # 执行生命周期时间戳
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 失败诊断字段
+    failure_category: Mapped[str | None] = mapped_column(String(64))
+    failure_stage: Mapped[str | None] = mapped_column(String(32))
+    retryable: Mapped[bool | None] = mapped_column(Boolean)
+    # 指标字段（第 10 章启用）
+    source_rows: Mapped[int | None] = mapped_column(BigInteger)
+    sink_rows: Mapped[int | None] = mapped_column(BigInteger)
+    source_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    sink_bytes: Mapped[int | None] = mapped_column(BigInteger)
+
+
+class FileAsset(Base, TimestampMixin):
+    """受管文件资产：上传身份、内部定位、引擎路径与解析结果。
+
+    浏览器给的文件名/编码/表头/行数/内容全都不可信，所以平台先把它变成"受管资产"：
+    - original_filename 给人看（显示别名）
+    - source_uri / normalized_uri 是 file-asset://<uuid>/… 的内部定位
+    - engine_path 是给 SeaTunnel 容器的只读路径 /data/file-assets/<uuid>/normalized.jsonl
+    - 解析结果：状态/Schema/统计/样本/行数/过期时间
+    """
+
+    __tablename__ = "file_assets"
+    __table_args__ = (
+        Index("ix_file_assets_project_created", "project_id", "created_at"),
+        CheckConstraint("byte_size >= 0", name="ck_file_assets_byte_size"),
+        CheckConstraint("row_count >= 0", name="ck_file_assets_row_count"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    # 原始文件名（显示用，可能带目录段/控制字符，已净化）
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 格式枚举：csv/json/jsonl/xlsx/parquet/orc/xml/markdown/pdf
+    file_format: Mapped[FileAssetFormat] = mapped_column(
+        enum_column(FileAssetFormat), nullable=False
+    )
+    # MIME 类型（上传时记录）
+    media_type: Mapped[str | None] = mapped_column(String(255))
+    # 字节数与 SHA-256（上传时计算）
+    byte_size: Mapped[int | None] = mapped_column(BigInteger)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    # 内部定位 URI：file-asset://<uuid>/source.<ext>
+    source_uri: Mapped[str | None] = mapped_column(String(1024))
+    # 规范化后的 JSONL URI：file-asset://<uuid>/normalized.jsonl
+    normalized_uri: Mapped[str | None] = mapped_column(String(1024))
+    # 引擎容器内路径：/data/file-assets/<uuid>/normalized.jsonl
+    engine_path: Mapped[str | None] = mapped_column(String(1024))
+    # 解析状态：PENDING/RUNNING/READY/FAILED
+    status: Mapped[DataProfileStatus] = mapped_column(
+        enum_column(DataProfileStatus), default=DataProfileStatus.PENDING, nullable=False
+    )
+    # Schema 定义（字段名/类型/是否主键）
+    schema_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    # 统计信息（行数/列数/规范化映射等）
+    statistics: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    # 脱敏样本（进入 Agent 上下文前的几十行）
+    masked_sample: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
+    # 实际行数（解析后统计）
+    row_count: Mapped[int | None] = mapped_column(BigInteger)
+    # 过期时间（+24h TTL，与 DataProfile 同一口径）
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 失败时的错误文案（不把主机路径或文件内容写进库）
+    error: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"))
 
 
 class AuditEvent(Base):
@@ -380,3 +454,257 @@ class AuditEvent(Base):
     reason: Mapped[str | None] = mapped_column(Text)
     # 与请求日志关联的追踪号；没有也不影响审计成立，所以可空。
     trace_id: Mapped[str | None] = mapped_column(String(64))
+
+
+class HarnessPolicyDecisionRecord(Base, TimestampMixin):
+    """策略决策记录：保存 PDP 评估结果供审批和证据链引用。"""
+
+    __tablename__ = "harness_policy_decisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    actor_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(16), nullable=False)
+    policy_bundle_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    rule_matches: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
+    required_roles: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    required_approvals: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    artifact_sha256: Mapped[str | None] = mapped_column(String(64))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    trace_id: Mapped[str | None] = mapped_column(String(64))
+
+
+class HarnessEvidenceStream(Base, TimestampMixin):
+    """保存证据流唯一身份和受行锁保护的当前哈希头。"""
+
+    __tablename__ = "harness_evidence_streams"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "stream_type",
+            "stream_key",
+            name="uq_harness_evidence_stream_identity",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    stream_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    stream_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    next_sequence: Mapped[int] = mapped_column(BigInteger, default=1, nullable=False)
+    head_hash: Mapped[str | None] = mapped_column(String(64))
+
+
+class HarnessEvidenceEvent(Base):
+    """保存只追加的规范事件、前序哈希和可选 Ed25519 检查点签名。"""
+
+    __tablename__ = "harness_evidence_events"
+    __table_args__ = (
+        UniqueConstraint("stream_id", "sequence", name="uq_harness_evidence_event_sequence"),
+        UniqueConstraint("event_hash", name="uq_harness_evidence_event_hash"),
+        CheckConstraint("sequence > 0", name="ck_harness_evidence_event_sequence_positive"),
+        Index("ix_harness_evidence_events_stream_occurred", "stream_id", "occurred_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    stream_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("harness_evidence_streams.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(8), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    previous_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_decision_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("harness_policy_decisions.id", ondelete="SET NULL"),
+    )
+    signature_algorithm: Mapped[str | None] = mapped_column(String(32))
+    signature_key_id: Mapped[str | None] = mapped_column(String(128))
+    signature_value: Mapped[str | None] = mapped_column(Text)
+    trace_id: Mapped[str | None] = mapped_column(String(64))
+
+
+class ExecutionPreparation(Base, TimestampMixin):
+    """保存不可变执行输入、影响摘要和审批要求，作为 Commit 的唯一授权依据。"""
+
+    __tablename__ = "execution_preparations"
+    __table_args__ = (
+        Index("ix_execution_preparations_project_created", "project_id", "created_at"),
+        Index("ix_execution_preparations_status_expires", "status", "expires_at"),
+        UniqueConstraint(
+            "project_id",
+            "idempotency_key",
+            name="uq_execution_preparations_project_idempotency",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    pipeline_version_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("pipeline_versions.id", ondelete="RESTRICT"), nullable=False
+    )
+    policy_decision_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("harness_policy_decisions.id", ondelete="RESTRICT"),
+        unique=True,
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(8), nullable=False)
+    policy_bundle_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    environment: Mapped[str] = mapped_column(String(64), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    tool_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    intent: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    policy_context: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    prepared_input: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    impact_report: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    rollback_plan: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    required_roles: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    required_approvals: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    requested_by: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    committed_by: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lock_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class HarnessApprovalDecision(Base):
+    """保存具名审批人对指定职责槽位的决定，并由唯一约束保证自然人分离。"""
+
+    __tablename__ = "harness_approval_decisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "preparation_id",
+            "role",
+            name="uq_harness_approval_decisions_role",
+        ),
+        UniqueConstraint(
+            "preparation_id",
+            "decided_by",
+            name="uq_harness_approval_decisions_person",
+        ),
+        Index("ix_harness_approval_decisions_preparation", "preparation_id", "decided_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    preparation_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("execution_preparations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    decided_by: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class HarnessCapabilityGrant(Base):
+    """保存能力令牌摘要、受签名声明和一次性消费事实，不持久化原始紧凑令牌。"""
+
+    __tablename__ = "harness_capability_grants"
+    __table_args__ = (
+        UniqueConstraint("preparation_id", name="uq_harness_capability_grants_preparation"),
+        Index("ix_harness_capability_grants_execution", "execution_run_id"),
+    )
+
+    token_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    preparation_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("execution_preparations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token_sha256: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    key_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    claims: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    claims_signature_algorithm: Mapped[str] = mapped_column(String(32), nullable=False)
+    claims_signature_value: Mapped[str] = mapped_column(Text, nullable=False)
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consumed_by: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    execution_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("execution_runs.id", ondelete="SET NULL")
+    )
+
+
+class HarnessCommandOutbox(Base, TimestampMixin):
+    """Harness 命令的 Outbox 表：实现至少一次可靠投递。
+
+    工作流：PENDING → SENDING（认领加锁）→ SENT（成功）或 FAILED（失败等待重试）。
+    失败后按指数退避重新变为可认领状态；超过最大尝试次数则标记为 DEAD。
+    """
+
+    __tablename__ = "harness_command_outbox"
+    __table_args__ = (
+        Index("ix_harness_command_outbox_status_available", "status", "available_at"),
+        Index("ix_harness_command_outbox_locked", "locked_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # 命令内容：JSON 序列化的 Harness 命令载荷
+    command_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    # 目标执行引擎或队列标识
+    target: Mapped[str] = mapped_column(String(128), nullable=False)
+    # 当前投递状态
+    status: Mapped[HarnessOutboxStatus] = mapped_column(
+        enum_column(HarnessOutboxStatus), default=HarnessOutboxStatus.PENDING, nullable=False
+    )
+    # 最早可处理时间：用于延迟投递和失败重试退避
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # 租约锁定时间：SENDING 状态时记录，用于检测崩溃 worker
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 成功发送时间
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # 尝试次数：每次认领递增
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 最后一次错误摘要（已脱敏）
+    last_error: Mapped[str | None] = mapped_column(Text)
+    # 关联的执行 run ID（可选）
+    execution_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("execution_runs.id", ondelete="SET NULL")
+    )
+    # 关联的项目 ID
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    # 发起者
+    created_by: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"))

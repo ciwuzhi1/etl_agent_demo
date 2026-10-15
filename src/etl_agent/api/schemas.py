@@ -20,6 +20,7 @@ from etl_agent.domain.enums import (
     ConnectorType,
     DataEndpointRole,
     DataProfileStatus,
+    FileAssetFormat,
     ProjectRole,
 )
 from etl_agent.domain.harness import HarnessRole
@@ -163,5 +164,29 @@ class DataProfileResponse(BaseModel):
     statistics: dict[str, Any]
     masked_sample: list[dict[str, Any]]
     sample_size: int
+    expires_at: datetime | None
+    error: str | None
+
+
+class FileAssetResponse(BaseModel):
+    """文件资产响应：物理上不含 source_uri/normalized_uri/engine_path/file-asset:// URI。
+
+    课件 §5.5（第 5 章）要求响应模型只回文件名、格式、字节、SHA-256、状态、Schema、
+    统计、脱敏样本、行数、过期时间、错误；内部定位由存储 Adapter 和 Worker 认识。
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    original_filename: str
+    format: FileAssetFormat = Field(validation_alias="file_format")
+    byte_size: int | None
+    sha256: str | None
+    status: DataProfileStatus
+    schema_definition: dict[str, Any] = Field(validation_alias="schema_json")
+    statistics: dict[str, Any]
+    masked_sample: list[dict[str, Any]]
+    row_count: int | None
     expires_at: datetime | None
     error: str | None
