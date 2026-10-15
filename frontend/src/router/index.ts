@@ -59,8 +59,10 @@ export const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const session = useSession()
+  // 先加载工作区成员，登录页的下拉才能列出真实身份（而不是演示占位名单）。
+  await session.ensureLoaded()
   if (to.name !== 'login' && !session.isAuthenticated.value) {
     return { name: 'login' }
   }

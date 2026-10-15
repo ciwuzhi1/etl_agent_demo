@@ -13,15 +13,20 @@ import RiskBadge from '@/components/ui/RiskBadge.vue'
 import StatusTag from '@/components/ui/StatusTag.vue'
 import { useAsyncState } from '@/composables/useAsyncState'
 import { useSession } from '@/composables/useSession'
+import { describeApiError } from '@/services/http'
 import { studioService } from '@/services/studio'
-import type { AgentStep } from '@/types/models'
+import type { AgentRunStatus, AgentStep } from '@/types/models'
 
 const message = useMessage()
 const session = useSession()
 
+// 定向到最近一次「生成候选」创建的 run，未指定时 service 会退回后端最近一次。
+const activeRunId = ref<string | null>(null)
+const hocon = ref('')
+
 const designState = useAsyncState(() => studioService.getDesign())
-const stepsState = useAsyncState(() => studioService.listAgentSteps())
-const runState = useAsyncState(() => studioService.getAgentRun())
+const stepsState = useAsyncState(() => studioService.listAgentSteps(activeRunId.value ?? undefined))
+const runState = useAsyncState(() => studioService.getAgentRun(activeRunId.value ?? undefined))
 const preparationsState = useAsyncState(() => studioService.listPreparations())
 
 const requirement = ref(
@@ -44,7 +49,19 @@ const sourceProfile = ref('prof-orders-source')
 const sinkProfile = ref('prof-clean-orders-sink')
 
 const commitBlocked = computed(() => !session.hasHarnessRole('OPERATOR'))
-const preparing = ref(false)
+const generating = ref(false)
+const committing = ref(false)
+
+// AgentRun 是异步图任务：QUEUED/RUNNING 期间有界轮询，直到进入终态信号。
+const RUN_TERMINAL = new Set<AgentRunStatus>(['WAITING_APPROVAL', 'WAITING_INPUT', 'FAILED'])
+const RUN_POLL_LIMIT = 12
+const RUN_POLL_INTERVAL_MS = 1500
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
+}
 
 function stepIcon(step: AgentStep) {
   if (step.status === 'ACTIVE') {
@@ -60,27 +77,98 @@ function stepClass(step: AgentStep): string {
   return step.status === 'DONE' ? 'text-ok' : 'text-muted'
 }
 
+/** 刷新最新版本，并把该版本冻结的 HOCON 制品填进审查区；无版本/制品时保持空态。 */
+async function refreshDesign(): Promise<void> {
+  await designState.run()
+  const versionId = designState.data.value?.version.id
+  if (!versionId) {
+    hocon.value = ''
+    return
+  }
+  try {
+    const artifact = await studioService.getArtifact(versionId)
+    hocon.value = artifact?.hocon ?? ''
+  } catch {
+    // 制品读取失败不改写页面事实，展示空态即可。
+    hocon.value = ''
+  }
+}
+
 async function handleGenerate(): Promise<void> {
-  if (!requirement.value.trim()) {
+  const text = requirement.value.trim()
+  if (!text) {
     message.warning('请先描述你的 ETL 需求')
     return
   }
-  preparing.value = true
-  await designState.run()
-  preparing.value = false
-  message.success('已生成候选：请审查 DAG、Schema Diff 与风险项')
+  generating.value = true
+  try {
+    await session.ensureLoaded()
+    const projectId = session.projectId.value
+    if (!projectId) {
+      throw new Error('工作区尚未就绪，请重新登录')
+    }
+    const run = await studioService.startAgentRun(projectId, text, [])
+    activeRunId.value = run.id
+    await runState.run()
+    await stepsState.run()
+
+    let status: AgentRunStatus = runState.data.value?.status ?? run.status
+    for (let attempt = 0; attempt < RUN_POLL_LIMIT && !RUN_TERMINAL.has(status); attempt += 1) {
+      await sleep(RUN_POLL_INTERVAL_MS)
+      await runState.run()
+      await stepsState.run()
+      status = runState.data.value?.status ?? status
+    }
+
+    await refreshDesign()
+    await preparationsState.run()
+
+    if (status === 'FAILED') {
+      message.error(runState.data.value?.message || 'Agent 生成失败')
+    } else if (RUN_TERMINAL.has(status)) {
+      message.success('Agent 生成完成，已刷新候选方案')
+    } else {
+      message.warning('Agent 仍在执行，请稍后刷新查看结果')
+    }
+  } catch (caught) {
+    message.error(describeApiError(caught))
+  } finally {
+    generating.value = false
+  }
 }
 
-function handleCommit(): void {
+async function handleCommit(): Promise<void> {
   if (commitBlocked.value) {
     message.warning('当前身份缺少 OPERATOR 职责，无法 Commit')
     return
   }
-  message.info('已进入 Harness Commit 流程（演示环境不产生真实副作用）')
+  const versionId = designState.data.value?.version.id
+  if (!versionId) {
+    message.warning('请先生成候选版本，再进行 Commit')
+    return
+  }
+  committing.value = true
+  try {
+    // Prepare → （审批）→ Commit；后端会在同一事务里冻结事实并按 PDP 决定是否需要审批。
+    const preparation = await studioService.prepare(versionId, null)
+    if (preparation.status === 'WAITING_APPROVAL') {
+      const roles = preparation.requiredRoles.join('、') || '审批人'
+      message.warning(`准备单 ${preparation.id} 等待审批，需 ${roles} 批准后才能 Commit`)
+      await preparationsState.run()
+      return
+    }
+    const result = await studioService.commitPreparation(preparation.id)
+    message.success(`已提交执行，执行编号 ${result.executionRunId}（${result.status}）`)
+    await preparationsState.run()
+  } catch (caught) {
+    message.error(describeApiError(caught))
+  } finally {
+    committing.value = false
+  }
 }
 
 onMounted(() => {
-  void designState.run()
+  void refreshDesign()
   void stepsState.run()
   void runState.run()
   void preparationsState.run()
@@ -95,7 +183,7 @@ onMounted(() => {
       description="描述目标、选择数据库或受管文件 Profile，由 Agent 生成并解释 SeaTunnel 配置。"
     >
       <template #actions>
-        <NButton secondary :loading="preparing" @click="handleGenerate">
+        <NButton secondary :loading="generating" @click="handleGenerate">
           <template #icon><Wand2 :size="15" /></template>
           生成候选
         </NButton>
@@ -106,14 +194,14 @@ onMounted(() => {
     <ErrorState
       v-else-if="designState.error.value && !designState.data.value"
       :message="designState.error.value"
-      @retry="handleGenerate"
+      @retry="refreshDesign"
     />
     <EmptyState v-else-if="!designState.data.value" title="尚无候选方案" description="输入需求后点击「生成候选」。" />
     <div v-else class="flex flex-col gap-4">
       <div class="grid grid-cols-1 gap-4 lg:grid-cols-[0.85fr_1.15fr]">
         <Panel title="需求与契约" description="自然语言只作为意图，冻结的契约才是可执行事实。">
           <div class="flex flex-col gap-4">
-            <FormField label="需求描述" required :hint="`${requirement.length} / 20000 字符`">
+            <FormField label="需求描述" required :hint="`${requirement.length} / 4000 字符`">
               <NInput
                 v-model:value="requirement"
                 type="textarea"
@@ -261,7 +349,8 @@ onMounted(() => {
 
           <details class="rounded-lg border border-line p-3">
             <summary class="cursor-pointer text-xs font-semibold text-ink">查看冻结 HOCON</summary>
-            <pre class="mt-3 max-h-[320px] overflow-auto rounded-lg bg-sidebar p-3 font-mono text-[10px] leading-relaxed text-sidebar-muted">{{ designState.data.value.hocon }}</pre>
+            <pre v-if="hocon" class="mt-3 max-h-[320px] overflow-auto rounded-lg bg-sidebar p-3 font-mono text-[10px] leading-relaxed text-sidebar-muted">{{ hocon }}</pre>
+            <p v-else class="mt-3 text-[10px] text-muted">当前版本尚未冻结 HOCON 制品。</p>
           </details>
         </div>
       </Panel>
@@ -272,6 +361,7 @@ onMounted(() => {
             type="primary"
             size="small"
             :disabled="commitBlocked"
+            :loading="committing"
             :title="commitBlocked ? '当前身份缺少 OPERATOR 职责' : undefined"
             @click="handleCommit"
           >
@@ -325,7 +415,7 @@ onMounted(() => {
 
       <p class="flex items-center gap-2 text-[10px] text-muted">
         <Sparkles :size="13" class="text-accent" aria-hidden="true" />
-        演示环境：候选与审批均为 mock 数据，不产生真实外部副作用。
+        生成候选、方案审查与 Commit 均调用真实后端；Commit 仅签发一次性能力并投递 Outbox，由 Worker 执行。
       </p>
     </div>
   </div>

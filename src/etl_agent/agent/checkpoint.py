@@ -22,4 +22,6 @@ def create_checkpoint_saver(database_url: str) -> Any:
     # TODO: 实现 PostgreSQL Checkpoint 后端
     # from langgraph.checkpoint.postgres import PostgresSaver
     # return PostgresSaver.from_conn_string(database_url)
-    raise NotImplementedError("LangGraph Checkpoint 后端尚未实现，需先安装 langgraph-checkpoint-postgres")
+    raise NotImplementedError(
+        "LangGraph Checkpoint 后端尚未实现，需先安装 langgraph-checkpoint-postgres"
+    )

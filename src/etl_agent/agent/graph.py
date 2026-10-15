@@ -241,9 +241,7 @@ def build_generation_graph(
             if candidate_validator is not None:
                 engine_check = await candidate_validator(result.hocon or "")
                 if engine_check.get("valid") is not True:
-                    summary = str(
-                        engine_check.get("summary") or "SeaTunnel CLI --check 未通过"
-                    )
+                    summary = str(engine_check.get("summary") or "SeaTunnel CLI --check 未通过")
                     raise DomainError("SeaTunnel 真实引擎检查未通过：" + summary)
         except DomainError as exc:
             repair_count = state.get("repair_count", 0)

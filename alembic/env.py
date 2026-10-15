@@ -6,7 +6,10 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from etl_agent.config import get_settings
-from etl_agent.infrastructure import models  # noqa: F401
+from etl_agent.infrastructure import (
+    agent_run_model,  # noqa: F401
+    models,  # noqa: F401
+)
 from etl_agent.infrastructure.database import Base
 
 config = context.config

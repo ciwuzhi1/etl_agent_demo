@@ -11,12 +11,12 @@ const session = useSession()
 
 const email = ref('engineer@atguigu.com')
 const password = ref('')
-const actorId = ref<string>(session.actors[0]?.id ?? '')
+const actorId = ref<string>(session.actors.value[0]?.id ?? '')
 const submitting = ref(false)
 const error = ref<string | null>(null)
 
 const actorOptions = computed(() =>
-  session.actors.map((actor) => ({ label: `${actor.name} · ${actor.title}`, value: actor.id })),
+  session.actors.value.map((actor) => ({ label: `${actor.name} · ${actor.title}`, value: actor.id })),
 )
 
 async function handleSubmit(): Promise<void> {

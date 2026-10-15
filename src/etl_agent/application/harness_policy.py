@@ -4,9 +4,10 @@ Implements deterministic policy rules, embedded and signed PDPs,
 and a persistence service for policy decisions.
 """
 
+import uuid
 from collections.abc import Sequence
 from datetime import timedelta
-from typing import ClassVar, Protocol
+from typing import Any, ClassVar, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -355,7 +356,10 @@ class EmbeddedPolicyDecisionPoint:
             roles = []
             approvals = 0
         return PolicyDecision(
-            id=f"pol-{canonical_sha256(request)[:12]}",
+            # 决策 ID 需要落进 harness_policy_decisions.id（UUID 主键）并被
+            # execution_preparations.policy_decision_id 外键引用，因此用请求指纹
+            # 派生确定性 UUID：同一请求得到同一 ID，天然幂等且满足列类型。
+            id=uuid.uuid5(uuid.NAMESPACE_URL, canonical_sha256(request)),
             project_id=request.intent.project_id,
             actor_id=request.intent.actor_id,
             outcome=outcome,
@@ -471,6 +475,25 @@ def _default_rule_ids() -> set[str]:
     }
 
 
+def _json_safe_match(match: PolicyRuleMatch) -> dict[str, Any]:
+    """把规则命中转成可写入 JSON 列的安全表示。
+
+    `PolicyRuleMatch` 是 dataclass，直接 `__dict__` 会带上 `PolicyOutcome` /
+    `RiskLevel` / `HarnessRole` 这些枚举对象，SQLAlchemy 的 JSON 序列化器无法编码；
+    这里统一取 `.value`，证据字典原样保留（它只含字符串/数字/列表）。
+    """
+    return {
+        "rule_id": match.rule_id,
+        "rule_version": match.rule_version,
+        "outcome": match.outcome.value,
+        "risk_level": match.risk_level.value,
+        "message": match.message,
+        "evidence": match.evidence,
+        "required_roles": [role.value for role in match.required_roles],
+        "required_approvals": match.required_approvals,
+    }
+
+
 class PolicyDecisionService:
     """在同一事务内评估并持久化结构化策略决策，供审批和证据链引用。"""
 
@@ -496,7 +519,7 @@ class PolicyDecisionService:
                 risk_level=decision.risk_level.value,
                 policy_bundle_version=decision.policy_bundle_version,
                 request_fingerprint=decision.request_fingerprint,
-                rule_matches=[match.__dict__ for match in decision.rule_matches],
+                rule_matches=[_json_safe_match(match) for match in decision.rule_matches],
                 required_roles=[role.value for role in decision.required_roles],
                 required_approvals=decision.required_approvals,
                 artifact_sha256=decision.artifact_sha256,

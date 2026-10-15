@@ -4,7 +4,12 @@
  */
 
 export type ProjectRole = 'ADMIN' | 'DATA_ENGINEER' | 'APPROVER' | 'VIEWER'
-export type HarnessRole = 'DATA_APPROVER' | 'SECURITY_APPROVER' | 'OPERATOR'
+export type HarnessRole =
+  | 'DATA_ENGINEER'
+  | 'DATA_APPROVER'
+  | 'SECURITY_APPROVER'
+  | 'OPERATOR'
+  | 'AUDITOR'
 
 export interface Actor {
   id: string
@@ -14,15 +19,31 @@ export interface Actor {
   harnessRoles: HarnessRole[]
 }
 
+/** 工作区成员：来自后端 GET /context，供控制台选择真实身份。 */
+export interface WorkspaceMember {
+  user_id: string
+  subject: string
+  display_name: string
+  role: ProjectRole
+  harness_roles: HarnessRole[]
+}
+
+export interface WorkspaceContext {
+  project_id: string
+  project_name: string
+  members: WorkspaceMember[]
+}
+
+/** 与后端 `domain/enums.py::ConnectorType` 逐字对齐，避免写库时被枚举拒绝。 */
 export type ConnectorType =
   | 'MYSQL'
   | 'POSTGRESQL'
   | 'ORACLE'
-  | 'SQLSERVER'
+  | 'SQL_SERVER'
   | 'HIVE'
   | 'HDFS'
   | 'DORIS'
-  | 'FILE'
+  | 'LOCAL_FILE'
 
 export type ReadinessStatus = 'READY' | 'TESTING' | 'FAILED' | 'UNKNOWN'
 export type ConnectionDirection = 'SOURCE' | 'SINK'
@@ -106,7 +127,7 @@ export interface AgentRun {
   message: string
 }
 
-export type AgentStepKind = 'GENERATE' | 'CLARIFY' | 'REPAIR' | 'REVIEW'
+export type AgentStepKind = string
 export type AgentStepStatus = 'DONE' | 'ACTIVE' | 'PENDING'
 
 export interface AgentStep {
@@ -154,7 +175,15 @@ export interface PipelineDesign {
   designReview: DesignReview
 }
 
-export type PreparationStatus = 'PENDING' | 'READY' | 'APPROVED' | 'COMMITTED' | 'EXPIRED' | 'DENIED'
+export type PreparationStatus =
+  | 'PENDING'
+  | 'WAITING_APPROVAL'
+  | 'READY'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'COMMITTED'
+  | 'EXPIRED'
+  | 'DENIED'
 
 export interface ExecutionPreparation {
   id: string
@@ -270,14 +299,14 @@ export interface BenchmarkRun {
 export interface BenchmarkCase {
   id: string
   name: string
-  expected: 'ALLOW' | 'REQUIRE_APPROVAL' | 'DENY'
-  observed: 'ALLOW' | 'REQUIRE_APPROVAL' | 'DENY'
+  expected: string
+  observed: string
   passed: boolean
   evidenceHash: string
 }
 
 export type ProposalType = 'POLICY' | 'PROMPT' | 'BENCHMARK'
-export type ProposalStatus = 'IN_REVIEW' | 'APPROVED' | 'REJECTED'
+export type ProposalStatus = 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'RELEASED'
 
 export interface SafetyProposal {
   id: string
@@ -289,7 +318,7 @@ export interface SafetyProposal {
   summary: string
 }
 
-export type ReleaseStage = 'SHADOW' | 'CANARY' | 'PROMOTION'
+export type ReleaseStage = 'SHADOW' | 'CANARY' | 'PROMOTION' | 'ROLLED_BACK'
 export type ReleaseStatus = 'RUNNING' | 'VERIFIED' | 'ROLLED_BACK' | 'APPROVED'
 
 export interface SafetyRelease {

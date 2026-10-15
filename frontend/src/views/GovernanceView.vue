@@ -21,6 +21,7 @@ const STAGE_LABEL: Record<ReleaseStage, string> = {
   SHADOW: '影子验证',
   CANARY: '5% 小流量',
   PROMOTION: '推广授权',
+  ROLLED_BACK: '已回滚',
 }
 
 function formatValue(value: number, unit: string): string {

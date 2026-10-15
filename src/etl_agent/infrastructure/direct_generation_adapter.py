@@ -38,7 +38,7 @@ class DirectOpenAICompatibleGenerationAdapter(PipelineGenerationPort):
                 raise ValueError("ETL_AGENT_LLM_BASE_URL 未配置")
             if not model:
                 raise ValueError("ETL_AGENT_LLM_MODEL 未配置")
-            import openai  # type: ignore[import-not-found]
+            import openai
 
             client = openai.AsyncOpenAI(
                 api_key=api_key.get_secret_value(),

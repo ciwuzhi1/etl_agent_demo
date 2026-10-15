@@ -1,0 +1,266 @@
+你是一名资深测试架构师 / QA 负责人。请对工作项目 `etl_agent_demo` 执行一次“全量测试与验收”，并以实际命令输出、HTTP 响应、数据库查询和日志证据为准生成报告。
+
+你不是实现者。默认只做只读侦察、可重复验证、最小复现和报告；不要擅自修改业务代码、迁移、配置、数据库或 `.env`。如果必须修改才能继续，先停下并说明原因，等我确认。
+
+## 一、输入与事实源
+
+以以下文档为需求与验收依据：
+- `docs/prd.md` v1.2
+- `docs/spec.md` v1.2
+- `docs/实现步骤与架构图.md`
+- `docs/第1章-待完成计划表.md` 到 `docs/第15章-任务表.md`、`docs/第12-15章-任务表.md`
+- 参考实现 `../etl_agent` 只作事实核对，不作为改动对象
+
+当前环境口径：
+- 测试 / 演示环境；暂不考虑生产环境
+- 不使用企业 KMS/HSM
+- 测试环境单 Worker 即可；不做多 Worker、队列隔离、优先级、项目级并发上限
+- 逐行 LLM 默认关闭，不作为交付能力
+- 前端本期保持单文件实现，不拆分、不多语言、不做无障碍
+- 无多租户、无项目配额
+- e2e Profile 可能未启动；未启动时相关项标 BLOCKED，不得用 mock 结果冒充 L2 实机通过
+
+文档可能存在状态冲突，例如“实现步骤与架构图”声称第 1–15 章全部落地，但第 8 章架构图、第 10/11 章任务表中仍有“待办 / 骨架 / 未跑通”标记。以实际仓库文件、迁移版本、测试输出、容器状态、HTTP 响应和数据库查询为准；冲突写入报告。
+
+## 二、测试目标
+
+对项目做全量验收，覆盖：
+1. 工程底座、静态检查、依赖一致性
+2. 数据库迁移链、模型与迁移零漂移
+3. 单元测试、集成测试、全量测试
+4. API 进程、Worker 进程、Beat 进程、健康检查
+5. 身份、Bootstrap、项目成员、Harness 职责、四眼分离
+6. 连接登记、异步连通测试、元数据探查、脱敏样本、秘密不落明文
+7. 文件资产：九格式解析、原子落盘、目录穿越、行数/大小限制
+8. ETL 契约与确定性门禁
+9. 候选生成：mock / direct / seatunnel-cli；无密钥时 direct 标 BLOCKED
+10. AgentRun / LangGraph / Checkpoint / 中断恢复
+11. Pipeline 版本冻结、SHA-256、审批绑定、四眼审批
+12. Harness 内核：PDP、Prepare/Approve/Commit、Capability 一次性、Outbox、Evidence Ledger
+13. SeaTunnel 执行与观测：提交、监控、失败诊断、指标归一化、终态不可改写
+14. 质量门禁、Doris 影子表 + 原子发布、Golden Case
+15. 统一副作用治理：取消、回滚、清理、Secret 轮换/销毁等 9 类
+16. 运行时监督：六维预算、确定性规则、缓解决策
+17. 调度与水位增量
+18. Benchmark 与安全进化：P0/P1 漏拦、合法成功率、误报率、证据覆盖、可复现性
+19. Web 控制台五视图与 API 对接，不夸大状态
+20. 安全负面用例与失败关闭
+
+## 三、执行原则
+
+- 每个测试项编号为 `FT-xxx`。
+- 每个测试项必须记录：前置条件、操作、预期、实际、证据、判定。
+- 判定只允许：`PASS` / `FAIL` / `BLOCKED` / `NOT IMPLEMENTED` / `CONFLICT`。
+- `PASS` 必须有命令输出、HTTP 状态、DB 查询、日志片段或文件摘要等证据。
+- 未实际执行、无法执行、依赖未实现或依赖外部环境的，不得写 PASS。
+- 不得为了让测试通过而修改代码、迁移、配置或伪造输出。
+- 不得把 `BLOCKED`、`NOT IMPLEMENTED`、`CONFLICT` 汇总成“全量通过”。
+- 不得访问生产环境；不得启用 KMS/HSM；不得启用多 Worker；不得启用逐行 LLM。
+- 不得泄露任何秘密明文；报告中如出现敏感值，必须脱敏。
+- 发现缺陷时给出最小复现步骤，不要自动修复。
+
+## 四、建议执行阶段
+
+### 阶段 0：环境与只读侦察
+在 `<PROJECT_ROOT>` 执行并记录：
+```powershell
+uv --version
+.\.venv\Scripts\python.exe --version
+uv lock --check
+git status --short
+docker compose -f infra/compose.yaml ps
+```
+检查：Python 是否 `>=3.12,<3.13`；`.env` 是否存在且被 gitignore；常驻服务是否至少包含 PostgreSQL 与 Redis；e2e Profile 是否启动。
+
+### 阶段 1：静态检查与迁移
+```powershell
+uv run alembic upgrade head
+uv run alembic current
+uv run alembic heads
+uv run alembic check
+uv run ruff check src tests alembic
+uv run ruff format --check src tests alembic
+uv run mypy
+```
+检查：迁移是否单 head；`current` 是否等于 `heads`；`alembic check` 是否零漂移；静态检查是否全绿。
+
+### 阶段 2：测试套件
+```powershell
+uv run pytest tests -q
+```
+再按模块拆分，至少覆盖：
+```powershell
+uv run pytest tests/unit/test_project_bootstrap.py tests/unit/test_project_members.py tests/unit/test_authentication.py tests/unit/test_state_machine.py -q
+uv run pytest tests/unit/test_connections.py tests/unit/test_mysql_probe.py -q
+uv run pytest tests/unit/test_file_assets.py -q
+uv run pytest tests/unit/test_schema_contract.py -q
+uv run pytest tests/unit/test_generation.py -q
+uv run pytest tests/unit/test_harness_policy.py tests/unit/test_tool_broker.py tests/unit/test_evidence_ledger.py -q
+```
+记录实际通过数、失败数、跳过数、警告。文档中提到的 `98 passed`、`43 passed`、`20 passed` 等只作为对照，不作为结论。
+
+### 阶段 3：启动服务与健康检查
+分别启动：
+```powershell
+uv run uvicorn etl_agent.main:app --host 127.0.0.1 --port 8000
+uv run celery -A etl_agent.worker:celery_app worker --loglevel=INFO --pool=solo
+```
+如启用 Beat，再单独启动，但先确认 `beat_schedule` 是否已登记；未登记则标 BLOCKED。
+
+检查：
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/health" | ConvertTo-Json
+```
+验证四字段：`status`、`service`、`secret_provider`、`secret_provider_configured`。`configured=true` 只能证明配置存在，不能证明建表、Redis、Secret 解密、执行链路全部可用。
+
+### 阶段 4：身份、Bootstrap、四眼与负面用例
+验证：
+- Bootstrap 开关关闭 / Token 错误 → 403
+- 首次正确 Bootstrap → 201
+- 再次 Bootstrap → 409
+- 缺少 `X-Actor-Id` → 422
+- 非成员访问 → 403
+- VIEWER 添加审批人 → `PermissionDenied`
+- 重复添加成员改角色 → `VersionConflict`
+- 网关签名篡改 / 过期 / Nonce 重放 → 401
+- Nonce Store 不可用 → 503，不得降级放行
+- 申请人审批自己提交的 Preparation → 403
+- 同一自然人占同一 Preparation 两个职责槽 → 拒绝
+- P0 破坏性操作：数据审批人 + 安全审批人，且两个不同自然人
+- 同一 Capability 二次执行 → 失败
+- 篡改声明 → 验签失败
+
+### 阶段 5：连接、探查、秘密边界
+验证：
+- `POST /api/v1/connections` → 201，响应无 `credentials` / `password` / `username` / `secret_ref` / Vault 路径
+- `POST /api/v1/connections/{id}/tests` → 202，轮询至 READY / FAILED
+- `POST /api/v1/connections/{id}/profiles` → 202，最终 READY
+- Profile 含 Schema、主键、近似统计、脱敏样本，不保存原始业务行
+- 邮箱样本形如 `a***@example.com`，密码类为 `[REDACTED]`
+- 标识符注入，如 `orders; DROP TABLE users` → 400
+- `options.password` 夹带秘密 → 400
+- 失败路径错误消息不含密码明文
+- 查 `encrypted_secrets`、`data_connections`、`audit_events`、`var/api.log`、`var/worker.log`，确认无明文秘密
+- 跨项目资源访问 → 直接 DENY
+
+### 阶段 6：文件资产
+验证：
+- 支持 CSV / JSON / JSONL / XLSX / Parquet / ORC / XML / Markdown / 文本型 PDF
+- 无文本层 PDF 明确失败，不硬猜 OCR
+- 上传三段事务：PENDING → 落盘 → READY
+- 响应无 `source_uri` / `normalized_uri` / `engine_path` / `file-asset://`
+- 原子落盘、SHA-256 一致、超限删除、空文件失败、未知扩展名失败
+- 客户端文件名 `../../outside.csv` 只影响显示名，不影响真实路径
+- 行数上限默认 100000；单文件 ≤25 MiB
+- `engine_path` 只证明写入 DB；SeaTunnel 容器真实只读消费属 e2e，未启动则 BLOCKED
+
+### 阶段 7：契约、生成、AgentRun、审批
+验证：
+- `profile_contracts()` 快照不含 `masked_sample` / `credential_placeholders`
+- 拓扑门禁 fail-closed：零期望连接器多出块 → 拒绝
+- 受管文件路径/格式/编码/字段类型漂移 → 拒绝
+- HDFS 占位符必须是 `${CONNECTION_...}`
+- 数据库端点唯一匹配；重复读同一张表 → 拒绝
+- 目标 Schema 必须显式列列，禁止 `*`；缺列/多列 → 拒绝
+- 生成 Provider 未配置 → `NOT_CONFIGURED`，不回显 Key，不发起收费调用
+- mock 生成三种结果：CONFIG / QUESTION / ERROR
+- LangGraph 六节点、两个 interrupt、共享修复预算最多 2 次，总量 ≤3 份候选
+- 三次全失败后不发起第四份，进入 FAILED
+- 补充澄清后同 `thread_id` 恢复
+- Pipeline 版本冻结、SHA-256、血缘、审批绑定内容摘要
+- 跳过 VALIDATED 申请审批 → 失败
+- 已 APPROVED 再次决策 → 失败
+- 审批后修改制品再 Commit → 摘要不一致，要求重新 Prepare
+- 版本审批单无 `expires_at`
+
+### 阶段 8：Harness 内核
+验证：
+- PDP 规则聚合取最严：ALLOW / REQUIRE_APPROVAL / DENY
+- 跨项目、秘密外泄、破坏性、无界操作、秘密使用等规则
+- Prepare 冻结输入/资源/制品指纹，无副作用
+- Approve 具名职责审批，申请人 ≠ 审批人
+- Commit 仅 OPERATOR，同事务创建 Run + Outbox + 消费 Capability + 证据事件
+- Capability 只存 `token_sha256`，一次性消费，二次失败
+- Outbox 扫描、认领、mark_sent / mark_failed、指数退避、租约恢复
+- Evidence Ledger `previous_hash` 链连续，`event_hash` 全局唯一，verify 通过
+- 失败关闭：策略、审批、签名、证据、Secret 无法验证时不得降级放行
+
+### 阶段 9：执行、质量、Doris、监督、副作用、调度
+如果 e2e Profile 未启动：
+- SeaTunnel 真实提交、Doris 原子发布、Golden Case 端到端、Doris REPLACE TABLE 全部标 BLOCKED
+- 可测 mock adapter、状态机、失败诊断、指标归一化、终态不可改写
+
+如果 e2e Profile 已启动：
+- 提交真实 HOCON 到 SeaTunnel Zeta
+- 轮询状态、采集指标、失败分类
+- 运行级影子表 + 质量门禁 + Doris 原子交换
+- Golden Case：`analytics.clean_orders` 4 行，错误表 4 行，4 个错误码正确
+- `Alice` 两侧空格删除；`alice@example.com` → `***@example.com`
+- 未过质量门禁禁止发布
+- 迟到错误 / 取消不得改写已确认终态
+- 监督：记录数超 `max_records` → `SUPERVISOR-P0-RECORD-BUDGET` → `QUARANTINE`
+- 输出放大率、拒绝率、字节数、超时预算
+- 统一副作用 9 类：取消、Doris 回滚、Doris 清理、Secret 迁移/激活/回退/暂存/验证/销毁
+- 清理未到期、申请人自批、仍被引用 Secret 的销毁 → 拒绝
+- 负向用例证明外部 Adapter 未被调用
+- 调度只创建 Preparation，不直接执行
+- 水位窗口 `(lower, upper]` 无重复不漏数；切换版本重置水位；只在成功后推进
+
+### 阶段 10：Benchmark、前端、安全总结
+Benchmark 冻结门槛：
+- `p0_p1_block_rate = 100%`
+- `legitimate_success_rate ≥ 95%`
+- `false_positive_rate ≤ 5%`
+- `evidence_coverage_rate = 100%`
+- `reproducibility_rate = 100%`
+- `non_llm_p95_max_regression ≤ 20%`
+- 任一 `p0_p1_regressions != 0` → 自动回滚授权，不允许加权平均抵消
+
+前端：
+- Vite build 通过
+- 五视图：总览 / 数据连接 / Pipeline Studio / 运行中心 / 安全治理
+- API 对接非 mock
+- Commit 成功不得展示为“ETL 成功”
+- 节流不得展示为“降低读取速率”
+- 推广授权不得展示为“已自动更新生产”
+
+安全总结：
+- API 响应 / 审计 / 日志 / Trace / 证据 / MQ / Prompt / 图状态 / 制品中，凭据与原始敏感样本出现次数 = 0
+- 策略、审批、签名、证据、Secret 无法验证时失败关闭
+- 生产身份可信网关本期不涉及
+- KMS/HSM 本期不使用
+- 逐行 LLM 默认关闭
+- 多 Worker、队列隔离、优先级、项目配额本期不存在
+
+## 五、最终报告格式
+
+请用中文输出，命令、字段名、状态枚举保留原文。报告结构：
+
+1. 测试环境
+   - 项目路径、Python、uv、Docker、容器状态、迁移版本、分支/commit、是否启用 e2e
+2. 执行摘要
+   - PASS / FAIL / BLOCKED / NOT IMPLEMENTED / CONFLICT 数量
+   - 最终结论：全量通过 / 部分通过 / 不通过 / 阻塞
+3. 测试矩阵
+   | 编号 | 阶段 | 测试项 | 前置 | 操作 | 预期 | 实际 | 证据 | 判定 |
+4. 关键证据
+   - 命令输出摘要
+   - HTTP 状态与响应字段
+   - DB 查询结果
+   - 日志脱敏检查结果
+   - 迁移 current / heads / check
+   - pytest 统计
+5. 缺陷与最小复现
+   - 编号、严重级别、现象、复现步骤、期望、实际、影响、建议
+6. 阻塞与未实现
+   - 每项说明依赖条件，例如 e2e 未启动、LLM Key 未配置、SeaTunnel CLI 未安装、Checkpoint 未实现、Worker 消费链路骨架等
+7. 与文档冲突
+   - 文档声称、实际证据、冲突判定
+8. 未覆盖项与风险
+9. 安全结论
+   - 秘密不落明文、失败关闭、四眼、Capability 一次性、证据链、终态不可改写、跨项目 DENY
+10. 最终验收结论
+   - 只能给：全量通过 / 部分通过 / 不通过 / 阻塞
+   - 明确列出“不能宣称通过”的项
+
+现在开始。先输出测试计划与阶段 0 只读侦察结果，然后按阶段执行。每完成一个阶段，更新一次判定矩阵，不要等最后才汇总。

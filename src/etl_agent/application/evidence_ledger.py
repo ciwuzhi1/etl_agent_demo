@@ -137,6 +137,15 @@ class EvidenceLedgerService:
         )
         event_hash = compute_event_hash(event_document)
 
+        # 注入签名器时对事件哈希做分离签名：签名覆盖链上每个事件，verify() 才能
+        # 区分“哈希链自洽”与“链确实由本平台私钥签发”。未注入时保持仅哈希链，
+        # 绝不静默退化成进程内临时密钥。
+        signature = (
+            self._signer.sign_detached(event_hash.encode("ascii"))
+            if self._signer is not None
+            else None
+        )
+
         # 创建事件记录
         event = HarnessEvidenceEvent(
             stream_id=stream.id,
@@ -150,6 +159,9 @@ class EvidenceLedgerService:
             previous_hash=previous_hash,
             event_hash=event_hash,
             trace_id=trace_id,
+            signature_algorithm=signature.algorithm if signature is not None else None,
+            signature_key_id=signature.key_id if signature is not None else None,
+            signature_value=signature.value if signature is not None else None,
         )
 
         # 插入事件并更新流头
@@ -255,8 +267,14 @@ class EvidenceLedgerService:
         sequence: int,
     ) -> EvidenceCheckpoint:
         """为指定序列号创建带签名的检查点记录。"""
-        # 获取流和事件
-        stream = await session.get(HarnessEvidenceStream, stream_id)
+        # 获取流和事件。stream_id 按签名是字符串，但 Uuid(as_uuid=True) 列只接受
+        # UUID 对象（绑定阶段会调用 .hex），因此这里显式归一化，避免调用方拿到
+        # 一个“注解说能用、实际崩在驱动层”的接口。
+        try:
+            stream_uuid = uuid.UUID(str(stream_id))
+        except ValueError as exc:
+            raise DomainError("证据流 ID 不是合法 UUID") from exc
+        stream = await session.get(HarnessEvidenceStream, stream_uuid)
         if stream is None:
             raise ResourceNotFound("证据流不存在")
 
@@ -265,7 +283,7 @@ class EvidenceLedgerService:
             (
                 await session.scalars(
                     select(HarnessEvidenceEvent)
-                    .where(HarnessEvidenceEvent.stream_id == stream_id)
+                    .where(HarnessEvidenceEvent.stream_id == stream_uuid)
                     .where(HarnessEvidenceEvent.sequence <= sequence)
                     .order_by(HarnessEvidenceEvent.sequence)
                 )

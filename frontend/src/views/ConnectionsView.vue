@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { KeyRound, Plus, RefreshCw, Search, Server, Upload } from 'lucide-vue-next'
 import { NButton, NInput, NSelect, useMessage } from 'naive-ui'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
@@ -11,7 +11,9 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import Panel from '@/components/ui/Panel.vue'
 import StatusTag from '@/components/ui/StatusTag.vue'
 import { useAsyncState } from '@/composables/useAsyncState'
+import { useSession } from '@/composables/useSession'
 import { connectionsService } from '@/services/connections'
+import { describeApiError } from '@/services/http'
 import type {
   Connection,
   ConnectorType,
@@ -21,6 +23,7 @@ import type {
 } from '@/types/models'
 
 const message = useMessage()
+const session = useSession()
 
 const listState = useAsyncState(() => connectionsService.listConnections())
 const connections = ref<Connection[]>([])
@@ -31,15 +34,29 @@ const secrets = ref<SecretLifecycle[]>([])
 
 const keyword = ref('')
 
+// 下拉值直接对齐后端枚举（SQL_SERVER / LOCAL_FILE 等），避免写库时被枚举拒绝。
 const connectorOptions: { label: string; value: ConnectorType }[] = [
   { label: 'MySQL', value: 'MYSQL' },
   { label: 'PostgreSQL', value: 'POSTGRESQL' },
   { label: 'Oracle', value: 'ORACLE' },
-  { label: 'SQL Server', value: 'SQLSERVER' },
+  { label: 'SQL Server', value: 'SQL_SERVER' },
   { label: 'Hive', value: 'HIVE' },
   { label: 'HDFS', value: 'HDFS' },
   { label: 'Doris', value: 'DORIS' },
 ]
+
+/** 各连接器的默认端口；切换类型时回填，HDFS 的 NameNode UI 走 9870。 */
+const DEFAULT_PORTS: Record<ConnectorType, string> = {
+  MYSQL: '3306',
+  POSTGRESQL: '5432',
+  ORACLE: '1521',
+  SQL_SERVER: '1433',
+  HIVE: '10000',
+  HDFS: '9870',
+  DORIS: '9030',
+  LOCAL_FILE: '',
+}
+
 const directionOptions = [
   { label: '数据源（Source）', value: 'SOURCE' },
   { label: '数据汇（Sink）', value: 'SINK' },
@@ -47,14 +64,30 @@ const directionOptions = [
 
 const draft = ref({
   name: '',
-  connectorType: 'MYSQL',
+  connectorType: 'MYSQL' as ConnectorType,
   host: '',
-  port: '3306',
+  port: DEFAULT_PORTS.MYSQL,
   database: '',
   direction: 'SOURCE',
+  username: '',
+  password: '',
 })
 const draftError = ref<string | null>(null)
 const submitting = ref(false)
+const testingId = ref<string | null>(null)
+const uploading = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
+
+// 类型切换时回填默认端口；用户随后仍可手动改。
+watch(
+  () => draft.value.connectorType,
+  (next) => {
+    const fallback = DEFAULT_PORTS[next]
+    if (fallback) {
+      draft.value.port = fallback
+    }
+  },
+)
 
 const filteredConnections = computed(() => {
   const query = keyword.value.trim().toLowerCase()
@@ -69,6 +102,16 @@ const filteredConnections = computed(() => {
 })
 
 const expiringSecrets = computed(() => secrets.value.filter((secret) => secret.daysToExpiry <= 7))
+
+// 连通性测试是异步任务：后端先把连接置 TESTING，由 Worker 回写 READY/FAILED，因此前端有界轮询。
+const TEST_POLL_LIMIT = 10
+const TEST_POLL_INTERVAL_MS = 1500
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
+}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) {
@@ -85,67 +128,144 @@ async function loadList(): Promise<void> {
 }
 
 async function testConnection(connection: Connection): Promise<void> {
+  testingId.value = connection.id
   connection.status = 'TESTING'
-  await new Promise((resolve) => {
-    window.setTimeout(resolve, 700)
-  })
-  connection.status = 'READY'
-  connection.lastTestedAt = new Date().toISOString()
-  message.success(`${connection.name} 连通性测试通过`)
+  try {
+    await connectionsService.testConnection(connection.id)
+    let resolved: Connection['status'] = connection.status
+    for (let attempt = 0; attempt < TEST_POLL_LIMIT; attempt += 1) {
+      await sleep(TEST_POLL_INTERVAL_MS)
+      const latest = await connectionsService.listConnections()
+      const current = latest.find((item) => item.id === connection.id)
+      if (current && current.status !== 'TESTING') {
+        resolved = current.status
+        break
+      }
+    }
+    await loadList()
+    if (resolved === 'READY') {
+      message.success(`${connection.name} 连通性测试通过`)
+    } else if (resolved === 'FAILED') {
+      message.error(`${connection.name} 连通性测试失败，请检查主机与凭据`)
+    } else {
+      message.warning(`${connection.name} 仍在测试中，请稍后刷新查看结果`)
+    }
+  } catch (caught) {
+    connection.status = 'FAILED'
+    message.error(describeApiError(caught))
+  } finally {
+    testingId.value = null
+  }
 }
 
 async function handleRegister(): Promise<void> {
   draftError.value = null
-  if (!draft.value.name.trim() || !draft.value.host.trim() || !draft.value.database.trim()) {
+  const value = draft.value
+  if (!value.name.trim() || !value.host.trim() || !value.database.trim()) {
     draftError.value = '名称、主机与数据库为必填项'
     return
   }
-  const port = Number.parseInt(draft.value.port, 10)
+  if (!value.username.trim() || !value.password) {
+    draftError.value = '用户名与密码为必填项'
+    return
+  }
+  const port = Number.parseInt(value.port, 10)
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     draftError.value = '端口必须是 1–65535 的整数'
     return
   }
 
   submitting.value = true
-  const created: Connection = {
-    id: crypto.randomUUID(),
-    name: draft.value.name.trim(),
-    connectorType: draft.value.connectorType as ConnectorType,
-    host: draft.value.host.trim(),
-    port,
-    database: draft.value.database.trim(),
-    direction: draft.value.direction as Connection['direction'],
-    status: 'TESTING',
-    lastTestedAt: null,
+  try {
+    await session.ensureLoaded()
+    const projectId = session.projectId.value
+    if (!projectId) {
+      throw new Error('工作区尚未就绪，请重新登录')
+    }
+    await connectionsService.createConnection(projectId, {
+      name: value.name.trim(),
+      connector_type: value.connectorType,
+      host: value.host.trim(),
+      port,
+      database: value.database.trim(),
+      username: value.username,
+      password: value.password,
+    })
+    await loadList()
+    draft.value = {
+      name: '',
+      connectorType: 'MYSQL',
+      host: '',
+      port: DEFAULT_PORTS.MYSQL,
+      database: '',
+      direction: 'SOURCE',
+      username: '',
+      password: '',
+    }
+    message.success('连接已登记，凭据将以密文保存，模型不可见')
+  } catch (caught) {
+    draftError.value = describeApiError(caught)
+    message.error(draftError.value)
+  } finally {
+    submitting.value = false
   }
-  connections.value = [created, ...connections.value]
-  draft.value = {
-    name: '',
-    connectorType: 'MYSQL',
-    host: '',
-    port: '3306',
-    database: '',
-    direction: 'SOURCE',
+}
+
+function pickFile(): void {
+  fileInput.value?.click()
+}
+
+async function handleFileChange(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const selected = input.files?.[0] ?? null
+  input.value = ''
+  if (!selected) {
+    return
   }
-  submitting.value = false
-  message.success('连接已登记，凭据将以密文保存，模型不可见')
+  uploading.value = true
+  try {
+    await session.ensureLoaded()
+    const projectId = session.projectId.value
+    if (!projectId) {
+      throw new Error('工作区尚未就绪，请重新登录')
+    }
+    await connectionsService.uploadFile(projectId, selected)
+    files.value = await connectionsService.listFiles()
+    message.success(`已上传 ${selected.name}，解析在后台进行`)
+  } catch (caught) {
+    message.error(describeApiError(caught))
+  } finally {
+    uploading.value = false
+  }
 }
 
 onMounted(async () => {
   await loadList()
-  const [profileList, fileList, secretList] = await Promise.all([
-    connectionsService.listProfiles(),
-    connectionsService.listFiles(),
-    connectionsService.listSecrets(),
-  ])
-  profiles.value = profileList
-  files.value = fileList
-  secrets.value = secretList
+  try {
+    const [profileList, fileList, secretList] = await Promise.all([
+      connectionsService.listProfiles(),
+      connectionsService.listFiles(),
+      connectionsService.listSecrets(),
+    ])
+    profiles.value = profileList
+    files.value = fileList
+    secrets.value = secretList
+  } catch (caught) {
+    message.error(describeApiError(caught))
+  }
 })
 </script>
 
 <template>
   <div>
+    <input
+      ref="fileInput"
+      type="file"
+      class="hidden"
+      accept=".csv,.tsv,.json,.jsonl,.xlsx,.parquet,.orc,.xml,.md,.markdown,.pdf"
+      @change="handleFileChange"
+    />
+
     <PageHeader
       eyebrow="DATA ACCESS"
       title="数据连接"
@@ -200,7 +320,14 @@ onMounted(async () => {
                   {{ connection.direction }}
                 </small>
               </div>
-              <NButton size="tiny" quaternary @click="testConnection(connection)">测试</NButton>
+              <NButton
+                size="tiny"
+                quaternary
+                :loading="testingId === connection.id"
+                @click="testConnection(connection)"
+              >
+                测试
+              </NButton>
             </li>
           </ul>
         </Panel>
@@ -226,7 +353,7 @@ onMounted(async () => {
 
         <Panel title="受管文件">
           <template #actions>
-            <NButton size="small" tertiary>
+            <NButton size="small" tertiary :loading="uploading" @click="pickFile">
               <template #icon><Upload :size="14" /></template>
               上传
             </NButton>
@@ -270,7 +397,19 @@ onMounted(async () => {
             <FormField label="数据库" required>
               <NInput v-model:value="draft.database" placeholder="source_db" />
             </FormField>
-            <FormField label="方向" required>
+            <FormField label="用户名" required>
+              <NInput v-model:value="draft.username" placeholder="etl_reader" autocomplete="off" />
+            </FormField>
+            <FormField label="密码" required hint="仅用于建立连接，密文存储且不回显。">
+              <NInput
+                v-model:value="draft.password"
+                type="password"
+                show-password-on="click"
+                placeholder="••••••••"
+                autocomplete="new-password"
+              />
+            </FormField>
+            <FormField label="方向">
               <NSelect v-model:value="draft.direction" :options="directionOptions" />
             </FormField>
             <p v-if="draftError" class="text-[11px] text-danger" role="alert">{{ draftError }}</p>

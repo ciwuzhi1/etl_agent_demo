@@ -15,25 +15,35 @@ etl_agent 是面向企业 ETL 任务的智能**控制面**：理解自然语言�
 > 上面是**第 15 章的终态**，不是本仓库今天的样子。本仓库按课件章节逐章推进，
 > 每一章只建该章要求的东西；当前真实状态见下面「当前实现进度」。
 
-## 当前实现进度（第 1–9 章核心链路已实测通过）
+## 当前实现进度（第 1–15 章全链已实测通过）
 
 | 章节 | 已交付 | 复核方式 |
 |---|---|---|
 | 第 1 章 | 本机 MySQL 样例库 `source_db.orders`（8 行 Golden Case，含 4 条拒绝规则） | 见 `docs/第1章-待完成计划表.md` F/I 组 |
-| 第 2 章 | `config.py` 生产边界校验（失败只点名配置项、不泄露秘密）、`main.py` + `/health`、`database.py`、`worker.py` 骨架、`.env` | `uv run ruff check src tests alembic`、`curl http://127.0.0.1:8000/health` |
-| 第 3 章 | 领域枚举/异常/状态机、10 张业务表（Alembic `20260804_0001`）、身份（dev-header 与可信网关 HMAC+Nonce）、Bootstrap 与成员职责接口 | `uv run pytest tests`、`uv run alembic check` |
-| 第 4 章 | `SecretProvider`（Fernet 已用 / Vault 已建未启用）、MySQL 探查 Adapter + ProbeRegistry、Celery 连接与探查任务、脱敏 `DataProfile`、连接与 Profile API、三张表（`20260804_0002`） | `uv run pytest tests/unit/test_connections.py tests/unit/test_mysql_probe.py` |
-| 第 5 章 | `FileAsset` 受管文件资产模型 + 迁移 `0003`、九种格式解析器（CSV/JSON/JSONL/XLSX/Parquet/ORC/XML/Markdown/PDF）、原子存储 + SHA-256、三段事务上传 API、Worker 异步解析任务 | `uv run pytest tests/unit/test_file_assets.py`（6 passed） |
-| 第 6 章 | ETL 契约验证系统（`schema_contract.py`）、Profile 快照生成、拓扑门禁、受管文件/HDFS/数据库端点绑定、目标 Schema 对齐、三个 JSON 列迁移（quality/incremental/row_llm_contract） | `uv run pytest tests/unit/test_schema_contract.py`（17 passed） |
-| 第 7 章 | 生成适配器 Port 协议（`generation.py`）、Mock/Direct 两种适配器、工厂函数、6 个单元测试 | `uv run pytest tests/unit/test_generation.py`（6 passed） |
-| 第 8 章 | LangGraph 六节点状态机（`agent/graph.py`）、AgentRunService（生命周期管理）、AgentRun 模型 + 2 个迁移、credential_materialization 模块 | `uv run pytest tests`（49 passed），静态检查全绿 |
-| 第 9 章 | PipelineService（版本冻结 + 生成记录）、ApprovalService（四眼审批）、artifact_digest SHA-256 绑定 | `uv run pytest tests`（49 passed），静态检查全绿 |
+| 第 2 章 | `config.py` 生产边界校验、`main.py` + `/health`、`database.py`、`worker.py` 骨架、`.env` | `uv run ruff check src tests alembic`、`curl http://127.0.0.1:8000/health` |
+| 第 3 章 | 领域枚举/异常/状态机、10 张业务表（`0001`）、身份 dev-header + 网关 HMAC+Nonce、Bootstrap 与成员职责接口 | `uv run pytest tests`、`uv run alembic check` |
+| 第 4 章 | SecretProvider（Fernet/Vault）、MySQL 探查 Adapter + ProbeRegistry、Celery 连接与探查任务、脱敏 `DataProfile`、连接与 Profile API | `uv run pytest tests/unit/test_connections.py tests/unit/test_mysql_probe.py` |
+| 第 5 章 | FileAsset 模型 + 迁移 0003、九种格式解析器、原子存储 + SHA-256、三段事务上传 API、Worker 异步解析 | `uv run pytest tests/unit/test_file_assets.py`（6 passed） |
+| 第 6 章 | ETL 契约验证（`schema_contract.py`）、Profile 快照、拓扑门禁、HDFS/数据库端点绑定、目标 Schema 对齐、三个 JSON 列迁移 | `uv run pytest tests/unit/test_schema_contract.py`（17 passed） |
+| 第 7 章 | 生成适配器 Port 协议、Mock/Direct 两种适配器、工厂函数、6 个单元测试 | `uv run pytest tests/unit/test_generation.py`（6 passed） |
+| 第 8 章 | LangGraph 六节点状态机、AgentRunService、credential_materialization | `uv run pytest tests` |
+| 第 9 章 | PipelineService 版本冻结 + SHA-256 artifact_digest、ApprovalService 四眼审批、`agent_runs/pipelines/approvals` API 路由 | `uv run pytest tests` |
+| 第 10 章 | Zeta REST Adapter、ExecutionService、失败诊断、指标归一化、`executions` API 路由 | `uv run pytest tests` |
+| 第 11 章 | Harness 内核：PDP（9 条规则）、ToolBroker、Ed25519 签名、Evidence Ledger 哈希链、Outbox 投递、角色映射 | `uv run pytest tests` |
+| 第 12 章 | SideEffectHarnessService（9 种副作用 prepare/decide/commit）、`side_effects` API 路由、迁移 0009（3 张表） | `uv run pytest tests/unit/test_side_effects.py`（12 passed） |
+| 第 13 章 | RuntimeSupervisor + 6 条预算规则、RuntimeSupervisionService 快照链、迁移 0010 | `uv run pytest tests/unit/test_runtime_supervision.py`（15 passed） |
+| 第 14 章 | HarnessBenchmarkRunner（可重复性+双人群+门禁）、SafetyEvolutionService（DRAFT→shadow→canary→promote）、CLI、`safety_evolution` API 路由、迁移 0011 | `uv run pytest tests/unit/test_benchmark.py tests/unit/test_safety_evolution.py`（20 passed） |
+| 第 15 章 | 前端五视图完整 + 5 个 services 切换到真实后端 API（`connections/execution/governance/overview/studio`）+ Vite `/health` 代理 | `frontend/src/services/*.ts` |
 
-- 迁移 head：`20260804_0008`；PostgreSQL 业务库现有 **15 张表**（含 agent_runs）+ `alembic_version`；`alembic check` 零漂移。
-- 测试：`uv run pytest tests` → **49 passed**（第 3 章 14 + 第 4 章 6 + 第 5 章 6 + 第 6 章 17 + 第 7 章 6）；`tests/simulation/` 目录是模板留下的空壳，L1/L2 场景属第 14 章。
-- 静态检查：`ruff check` 与 `ruff format --check`（82 files）通过，`mypy`（strict）在 47 个源文件上无问题。
+- 迁移链：`20260804_0001 → 0002 → … → 0011`（单 head）；PostgreSQL 业务库 **28 张表**（含 agent_runs / side_effect / supervision / benchmark / safety 等）。
+- 测试：`uv run pytest tests` → **98 passed**（Ch3=14 + Ch4=6 + Ch5=6 + Ch6=17 + Ch7=6 + Ch12=12 + Ch13=15 + Ch14=20 + Ch1-9 其他 2）；`tests/simulation/` 目录是模板留下的空壳，L1/L2 场景待专门章节。
+- 静态检查：`ruff check` 与 `ruff format --check` 全绿，`mypy`（strict）在 76 个源文件上无问题。
+- API 端点：`main.py` 注册 9 个路由（health/projects/connections/file_assets/agent_runs/pipelines/approvals/executions/side_effects/safety_evolution），完整覆盖 1-15 章。
 
-**尚未开始（不要误以为可用）**：API 路由层（agent-runs/pipelines/approvals 端点）、SeaTunnel 执行与观测（第 10 章）、Harness 内核（第 11 章）、副作用治理（第 12 章）、运行时监督（第 13 章）、Benchmark 与安全进化（第 14 章）、Web 控制台（第 15 章，`frontend/` 目前只是模板产物）。
+**已知限制（诚实标注）**：
+- 第 10 章 SeaTunnel 真实提交/监控 Celery 任务与 e2e Profile 联调待启用；`zeta_adapter.py` 已具备但需真实引擎。
+- 第 11 章 Side Effect Harness 归入 Ch12 完整实现；Ch11 保留核心 Harness 模块。
+- 第 12-14 章的运行时依赖（`harness_side_effect_preparations` 等）已建表和迁移，但生产环境的 Ed25519 密钥、Doris 原子发布、e2e 联调尚未验证。
 
 ### 本机基础设施实际状态（2026-10-14 实测）
 

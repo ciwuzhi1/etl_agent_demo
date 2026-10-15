@@ -72,15 +72,11 @@ def normalize_seatunnel_metrics(raw_metrics: dict[str, Any]) -> ExecutionMetrics
     source_rows = _first_int(
         raw_metrics, "SourceReceivedCount", "SourceReadCount", "source_received_count"
     )
-    sink_rows = _first_int(
-        raw_metrics, "SinkCommittedCount", "SinkWriteCount", "sink_write_count"
-    )
+    sink_rows = _first_int(raw_metrics, "SinkCommittedCount", "SinkWriteCount", "sink_write_count")
     source_bytes = _first_int(
         raw_metrics, "SourceReceivedBytes", "SourceReadBytes", "source_received_bytes"
     )
-    sink_bytes = _first_int(
-        raw_metrics, "SinkCommittedBytes", "SinkWriteBytes", "sink_write_bytes"
-    )
+    sink_bytes = _first_int(raw_metrics, "SinkCommittedBytes", "SinkWriteBytes", "sink_write_bytes")
 
     # 提取分表指标
     tables = _extract_table_metrics(raw_metrics)
@@ -111,13 +107,9 @@ def _extract_table_metrics(raw_metrics: dict[str, Any]) -> list[TableMetrics]:
     - TableSinkWriteCount: {"table1": 95, "table2": 198}
     """
     table_source_rows = _to_dict(raw_metrics.get("TableSourceReceivedCount"))
-    table_sink_rows = _first_dict(
-        raw_metrics, "TableSinkCommittedCount", "TableSinkWriteCount"
-    )
+    table_sink_rows = _first_dict(raw_metrics, "TableSinkCommittedCount", "TableSinkWriteCount")
     table_source_bytes = _to_dict(raw_metrics.get("TableSourceReceivedBytes"))
-    table_sink_bytes = _first_dict(
-        raw_metrics, "TableSinkCommittedBytes", "TableSinkWriteBytes"
-    )
+    table_sink_bytes = _first_dict(raw_metrics, "TableSinkCommittedBytes", "TableSinkWriteBytes")
 
     # 收集所有出现过的表名
     all_tables: set[str] = set()

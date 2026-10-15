@@ -1,7 +1,5 @@
 """生成适配器工厂，根据配置实例化对应的后端。"""
 
-from pydantic import SecretStr
-
 from etl_agent.application.generation import PipelineGenerationPort
 from etl_agent.config import get_settings
 

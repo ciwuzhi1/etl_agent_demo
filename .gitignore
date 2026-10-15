@@ -30,3 +30,7 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 /.commandcode/
+/docs/
+
+# Celery Beat 本地调度状态（运行期生成，不提交）
+celerybeat-schedule*

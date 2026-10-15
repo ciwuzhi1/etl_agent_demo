@@ -9,7 +9,12 @@ StateT = TypeVar("StateT", bound=StrEnum)
 
 
 PIPELINE_TRANSITIONS: Mapping[PipelineVersionStatus, frozenset[PipelineVersionStatus]] = {
-    PipelineVersionStatus.DRAFT: frozenset({PipelineVersionStatus.PROFILING}),
+    # DRAFT 既可经显式 PROFILING 进入 GENERATED，也可直接进入 GENERATED：
+    # 当前产品没有单独"发起探查"的入口，若只保留 DRAFT→PROFILING，生成链路会从
+    # 第一步就断死。PROFILING 作为可选中间态保留，仍可被后续探查流程使用。
+    PipelineVersionStatus.DRAFT: frozenset(
+        {PipelineVersionStatus.PROFILING, PipelineVersionStatus.GENERATED}
+    ),
     PipelineVersionStatus.PROFILING: frozenset({PipelineVersionStatus.GENERATED}),
     PipelineVersionStatus.GENERATED: frozenset({PipelineVersionStatus.VALIDATED}),
     PipelineVersionStatus.VALIDATED: frozenset({PipelineVersionStatus.WAITING_APPROVAL}),

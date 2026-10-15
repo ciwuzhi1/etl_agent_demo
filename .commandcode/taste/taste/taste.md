@@ -9,7 +9,7 @@
 - Works spec-driven: maintains living PRD/SPEC docs with numbered open questions / decision items (OQ-n, DQ-n) and ADRs, raising topics by referencing those IDs. Confidence: 0.6
 - Prefers a concise overview first (e.g. a summary table) and then drills into specific items on demand ("详细讲解第一个与最后一个数据库"), treating the overview as an index rather than wanting everything front-loaded. Confidence: 0.5
 - When scaffolding a new project, wants the assistant to mirror an existing reference/template project's skeleton ("模仿模版代码") — create the directory layout and prepare the environment shell, rather than inventing a fresh structure. Confidence: 0.55
-- Prefers to run environment/dependency-setup commands himself (e.g. "然后我来启动uv配置环境的命令") — wants the assistant to prepare files/config so he can execute the install steps, not have the assistant run them. Confidence: 0.55
+- Prefers to run environment/dependency-setup commands himself (e.g. "然后我来启动uv配置环境的命令", "我把docker启动了") — starts Docker/services on his own and then hands the restart/re-run task back to the assistant, rather than having the assistant bring infrastructure up. Confidence: 0.65
 - Uses `uv` for Python project/environment management (uv project layout, `pyproject.toml`, `uv sync`). Confidence: 0.5
 - Reports blockers by pasting the raw terminal/command output verbatim and expects the assistant to diagnose the cause and fix the config itself (e.g. commenting out a dependency that hangs) rather than asking for a prose description of the problem. Confidence: 0.5
 - Wants explicit control over git commit scope — the assistant should not stage/commit untracked or unstaged changes on its own, but confirm boundaries first (his known preference is "不擅自提交未暂存内容"). Confidence: 0.5
@@ -18,3 +18,7 @@
 - Prefers Naive UI as the Vue component library (lightweight, TypeScript-friendly) over Element Plus or no-framework pure-Tailwind. Confidence: 0.5
 - Before implementation, wants a written plan produced from the given spec/prompt file (saved as a plan document) and reviewed before any code is written, rather than jumping straight to code. Confidence: 0.55
 - After the assistant saves an artifact to a file (e.g. a plan document), wants the full content also rendered inline in the chat ("把计划直接展示给我") — a file path reference alone is not enough. Confidence: 0.5
+- When handed an unfamiliar project, wants the assistant to read the project's docs directory first ("先阅读 ./docs 下面文档了解项目情况") to build an understanding before testing or changing anything. Confidence: 0.6
+- Does not accept scope-limiting: when the assistant flags remaining gaps as "out of scope / for later" (e.g. unimplemented endpoints, empty task registry), expects them ALL to be implemented ("全部修复") rather than triaged or deferred. Confidence: 0.55
+- Judges a task done only when the whole project actually runs end-to-end — wants the full stack brought up and exercised (services, DB migrations, worker, frontend flows), not just unit tests or static checks passing. Confidence: 0.6
+- Prioritizes speed and breadth of working functionality: explicitly asks to parallelize work ("多路并行尽可能最快速度把大部分功能跑通") — splitting independent workstreams across multiple agents to get the most features running fast, rather than perfecting fewer things. Confidence: 0.5

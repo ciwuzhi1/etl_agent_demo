@@ -40,7 +40,7 @@ from etl_agent.infrastructure.models import (
 
 def artifact_digest(hocon: str, plan: dict[str, Any]) -> str:
     """对规范化 Artifact 计算 SHA-256，用于审批绑定和防篡改校验。
-    
+
     使用 canonical JSON（sorted keys）确保同一计划无论序列化顺序如何，
     都能得到相同的摘要。
     """
@@ -50,31 +50,31 @@ def artifact_digest(hocon: str, plan: dict[str, Any]) -> str:
 
 def require_generation_contract(plan: dict[str, Any], hocon: str) -> None:
     """生成制品的纯确定性门禁，供 Agent 和外部导入路径共用。
-    
+
     第 9 章简化版：只校验核心契约，不包含质量、增量、行级 LLM 等高级功能。
     """
     # 安全策略：禁止硬编码秘密
     require_no_hardcoded_secrets(hocon)
-    
+
     # Schema 契约：拓扑对齐
     require_profile_topology_contract(plan.get("profile_contracts", []), hocon)
-    
+
     # Schema 契约：受管文件源
     require_managed_file_source_contract(plan.get("profile_contracts", []), hocon)
-    
+
     # Schema 契约：HDFS 端点
     require_hdfs_file_contract(plan.get("profile_contracts", []), hocon)
-    
+
     # Schema 契约：数据库端点
     require_database_endpoint_contract(plan.get("profile_contracts", []), hocon)
-    
+
     # Schema 契约：目标表结构对齐
     require_target_schema_contract(plan.get("profile_contracts", []), hocon)
 
 
 class PipelineService:
     """Pipeline 版本生命周期管理。
-    
+
     负责创建 Pipeline、记录生成结果、执行状态转换，并确保所有操作
     符合领域规则和安全策略。
     """
@@ -90,7 +90,7 @@ class PipelineService:
         trace_id: str | None = None,
     ) -> PipelineVersion:
         """创建 Pipeline 和首个 DRAFT 版本。
-        
+
         Args:
             session: 数据库会话
             project_id: 项目 ID
@@ -98,21 +98,21 @@ class PipelineService:
             name: Pipeline 名称
             requirement: 需求描述文本
             trace_id: 追踪 ID（可选）
-            
+
         Returns:
             新创建的 PipelineVersion 对象
-            
+
         Raises:
             PermissionDenied: 如果用户没有 DATA_ENGINEER 或 ADMIN 角色
         """
         # 权限校验
         await self._require_engineer(session, project_id, actor_id)
-        
+
         # 创建 Pipeline 实体
         pipeline = Pipeline(project_id=project_id, name=name)
         session.add(pipeline)
         await session.flush()
-        
+
         # 创建 v1 版本（DRAFT 状态）
         version = PipelineVersion(
             pipeline_id=pipeline.id,
@@ -122,7 +122,7 @@ class PipelineService:
         )
         session.add(version)
         await session.flush()
-        
+
         # 记录审计事件
         session.add(
             AuditEvent(
@@ -137,7 +137,7 @@ class PipelineService:
             )
         )
         await session.flush()
-        
+
         return version
 
     async def record_generation(
@@ -153,13 +153,13 @@ class PipelineService:
         trace_id: str | None = None,
     ) -> PipelineVersion:
         """保存服务端生成结果和不可变 Artifact。
-        
+
         流程：
         1. 校验生成契约（require_generation_contract）
         2. 计算制品 SHA-256
         3. 保存 PipelineArtifact
         4. 状态转换：DRAFT/PROFILING -> GENERATED
-        
+
         Args:
             session: 数据库会话
             version_id: 版本 ID
@@ -169,10 +169,10 @@ class PipelineService:
             artifact_uri: 制品存储 URI
             upstream_version: 上游版本标识（如 Seatunnel CLI commit）
             trace_id: 追踪 ID（可选）
-            
+
         Returns:
             更新后的 PipelineVersion 对象
-            
+
         Raises:
             DomainError: 如果契约校验失败
             InvalidStateTransition: 如果当前状态不允许生成
@@ -180,24 +180,24 @@ class PipelineService:
         """
         # 1. 校验生成契约（在修改版本前先验证）
         require_generation_contract(plan, hocon)
-        
+
         # 2. 获取版本并校验权限
         version, project_id = await self._version_and_project(session, version_id)
         await self._require_engineer(session, project_id, actor_id)
-        
+
         # 3. 状态转换校验
         require_pipeline_transition(version.status, PipelineVersionStatus.GENERATED)
-        
+
         # 4. 计算制品摘要
         digest = artifact_digest(hocon, plan)
-        
+
         # 5. 保存状态和制品
         before = self._version_state(version)
         version.status = PipelineVersionStatus.GENERATED
         version.plan = plan
         version.artifact_sha256 = digest
         version.lock_version += 1
-        
+
         session.add(
             PipelineArtifact(
                 pipeline_version_id=version.id,
@@ -207,7 +207,7 @@ class PipelineService:
                 metadata_json={"seatunnel_cli_commit": upstream_version},
             )
         )
-        
+
         # 6. 记录审计事件
         self._add_transition_audit(
             session,
@@ -219,7 +219,7 @@ class PipelineService:
             trace_id=trace_id,
         )
         await session.flush()
-        
+
         return version
 
     async def validate(
@@ -231,16 +231,16 @@ class PipelineService:
         trace_id: str | None = None,
     ) -> PipelineVersion:
         """执行确定性输入与契约校验，将版本推进到 VALIDATED 状态。
-        
+
         Args:
             session: 数据库会话
             version_id: 版本 ID
             actor_id: 操作用户 ID
             trace_id: 追踪 ID（可选）
-            
+
         Returns:
             更新后的 PipelineVersion 对象
-            
+
         Raises:
             InvalidStateTransition: 如果当前状态不是 GENERATED
             PermissionDenied: 如果用户没有权限
@@ -265,7 +265,7 @@ class PipelineService:
         trace_id: str | None = None,
     ) -> PipelineVersion:
         """校验并执行 Pipeline 状态迁移，使状态写入和审计记录处于同一事务。
-        
+
         Args:
             session: 数据库会话
             version_id: 版本 ID
@@ -273,18 +273,18 @@ class PipelineService:
             target: 目标状态
             action: 审计动作名称
             trace_id: 追踪 ID（可选）
-            
+
         Returns:
             更新后的 PipelineVersion 对象
         """
         version, project_id = await self._version_and_project(session, version_id)
         await self._require_engineer(session, project_id, actor_id)
         require_pipeline_transition(version.status, target)
-        
+
         before = self._version_state(version)
         version.status = target
         version.lock_version += 1
-        
+
         self._add_transition_audit(
             session,
             version=version,
@@ -295,7 +295,7 @@ class PipelineService:
             trace_id=trace_id,
         )
         await session.flush()
-        
+
         return version
 
     @staticmethod
@@ -303,16 +303,16 @@ class PipelineService:
         session: AsyncSession, version_id: uuid.UUID
     ) -> tuple[PipelineVersion, uuid.UUID]:
         """联表解析版本与所属项目，统一处理资源缺失和跨项目访问。
-        
+
         使用 SELECT FOR UPDATE 防止并发修改冲突。
-        
+
         Args:
             session: 数据库会话
             version_id: 版本 ID
-            
+
         Returns:
             (PipelineVersion, project_id) 元组
-            
+
         Raises:
             ResourceNotFound: 如果版本不存在
         """
@@ -332,14 +332,14 @@ class PipelineService:
         session: AsyncSession, project_id: uuid.UUID, actor_id: uuid.UUID
     ) -> None:
         """校验用户具有修改 Pipeline 的权限。
-        
+
         只有 ADMIN 和 DATA_ENGINEER 角色可以创建或修改 Pipeline。
-        
+
         Args:
             session: 数据库会话
             project_id: 项目 ID
             actor_id: 用户 ID
-            
+
         Raises:
             PermissionDenied: 如果用户角色不符合要求
         """
@@ -355,10 +355,10 @@ class PipelineService:
     @staticmethod
     def _version_state(version: PipelineVersion) -> dict[str, Any]:
         """提取版本状态的快照，用于审计记录的 before/after 字段。
-        
+
         Args:
             version: PipelineVersion 对象
-            
+
         Returns:
             包含 status 和 lock_version 的字典
         """
@@ -376,7 +376,7 @@ class PipelineService:
         trace_id: str | None = None,
     ) -> None:
         """添加状态转换的审计事件。
-        
+
         Args:
             session: 数据库会话
             version: 版本对象

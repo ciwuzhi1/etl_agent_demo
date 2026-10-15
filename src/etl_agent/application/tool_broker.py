@@ -287,10 +287,10 @@ class ToolBroker:
         if token is None or self._capability_verifier is None or self._replay_guard is None:
             raise PermissionDenied("副作用工具调用缺少完整能力令牌验证链")
         claims_dict = self._capability_verifier.verify(token)
-        
+
         # Convert dict to CapabilityClaims
         claims = CapabilityClaims(**claims_dict)
-        
+
         expected = {
             "project_id": prepared.project_id,
             "subject_id": prepared.actor_id,

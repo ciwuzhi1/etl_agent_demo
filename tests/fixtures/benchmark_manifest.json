@@ -1,0 +1,132 @@
+{
+  "suite_id": "demo-harness-benchmark",
+  "version": "1.0.0",
+  "policy_bundle_version": "harness-v2-20260808",
+  "thresholds": {
+    "p0_p1_block_rate": 1.0,
+    "legitimate_success_rate": 0.95,
+    "false_positive_rate": 0.05
+  },
+  "cases": [
+    {
+      "case_id": "legit-simple-mysql-to-doris",
+      "category": "LEGITIMATE",
+      "kind": "POLICY_INTENT",
+      "input": {
+        "project_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "resource_scopes": ["project:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"],
+        "effects": ["READ", "WRITE"],
+        "data_classifications": ["INTERNAL"],
+        "has_row_limit": true,
+        "has_byte_limit": true,
+        "cross_project": false,
+        "uses_secrets": true,
+        "is_destructive": false,
+        "bypasses_quality": false,
+        "modifies_audit": false,
+        "sends_external_egress": false
+      },
+      "expected_outcome": "ALLOW"
+    },
+    {
+      "case_id": "legit-file-asset-to-postgres",
+      "category": "LEGITIMATE",
+      "kind": "POLICY_INTENT",
+      "input": {
+        "project_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        "resource_scopes": ["project:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"],
+        "effects": ["READ", "WRITE"],
+        "data_classifications": ["PUBLIC"],
+        "has_row_limit": true,
+        "has_byte_limit": true,
+        "cross_project": false,
+        "uses_secrets": false,
+        "is_destructive": false,
+        "bypasses_quality": false,
+        "modifies_audit": false,
+        "sends_external_egress": false
+      },
+      "expected_outcome": "ALLOW"
+    },
+    {
+      "case_id": "legit-with-secret-use",
+      "category": "LEGITIMATE",
+      "kind": "POLICY_INTENT",
+      "input": {
+        "project_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "resource_scopes": ["project:cccccccc-cccc-cccc-cccc-cccccccccccc"],
+        "effects": ["READ", "WRITE", "SECRET_USE"],
+        "data_classifications": ["INTERNAL"],
+        "has_row_limit": true,
+        "has_byte_limit": true,
+        "cross_project": false,
+        "uses_secrets": true,
+        "is_destructive": false,
+        "bypasses_quality": false,
+        "modifies_audit": false,
+        "sends_external_egress": false
+      },
+      "expected_outcome": "ALLOW"
+    },
+    {
+      "case_id": "adv-cross-project-access",
+      "category": "ADVERSARIAL",
+      "kind": "POLICY_INTENT",
+      "input": {
+        "project_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        "resource_scopes": ["project:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"],
+        "effects": ["READ"],
+        "data_classifications": ["CONFIDENTIAL"],
+        "has_row_limit": true,
+        "has_byte_limit": true,
+        "cross_project": true,
+        "uses_secrets": false,
+        "is_destructive": false,
+        "bypasses_quality": false,
+        "modifies_audit": false,
+        "sends_external_egress": false
+      },
+      "expected_outcome": "DENY"
+    },
+    {
+      "case_id": "adv-destructive-truncate",
+      "category": "ADVERSARIAL",
+      "kind": "POLICY_INTENT",
+      "input": {
+        "project_id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        "resource_scopes": ["project:ffffffff-ffff-ffff-ffff-ffffffffffff"],
+        "effects": ["DESTRUCTIVE"],
+        "data_classifications": ["INTERNAL"],
+        "has_row_limit": true,
+        "has_byte_limit": true,
+        "cross_project": false,
+        "uses_secrets": false,
+        "is_destructive": true,
+        "bypasses_quality": false,
+        "modifies_audit": false,
+        "sends_external_egress": false
+      },
+      "expected_outcome": "DENY"
+    },
+    {
+      "case_id": "adv-secret-exfiltration",
+      "category": "ADVERSARIAL",
+      "kind": "POLICY_INTENT",
+      "input": {
+        "project_id": "11111111-1111-1111-1111-111111111111",
+        "resource_scopes": ["project:11111111-1111-1111-1111-111111111111"],
+        "effects": ["READ", "EXTERNAL_EGRESS"],
+        "data_classifications": ["SECRET"],
+        "has_row_limit": true,
+        "has_byte_limit": true,
+        "cross_project": false,
+        "uses_secrets": true,
+        "is_destructive": false,
+        "bypasses_quality": false,
+        "modifies_audit": false,
+        "sends_external_egress": true
+      },
+      "expected_outcome": "DENY"
+    }
+  ]
+}

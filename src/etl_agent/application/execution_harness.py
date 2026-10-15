@@ -14,7 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from etl_agent.application.evidence_ledger import EvidenceLedgerService
 from etl_agent.application.harness_access import HarnessAccessService
-from etl_agent.application.harness_policy import EmbeddedPolicyDecisionPoint
+from etl_agent.application.harness_policy import (
+    EmbeddedPolicyDecisionPoint,
+    PolicyDecisionService,
+)
 from etl_agent.domain.enums import ExecutionStatus, PipelineVersionStatus
 from etl_agent.domain.errors import DomainError, PermissionDenied, ResourceNotFound, VersionConflict
 from etl_agent.domain.harness import (
@@ -141,13 +144,13 @@ def _require_all_approvals(
     """Check if all required roles have approved with APPROVE decision."""
     if not required_roles:
         return True
-    
+
     approved_roles = {
         approval.role
         for approval in approvals
         if approval.decision == HarnessApprovalValue.APPROVE.value
     }
-    
+
     # Check if we have enough approvals from required roles
     matching_approvals = sum(
         1
@@ -155,7 +158,7 @@ def _require_all_approvals(
         if approval.decision == HarnessApprovalValue.APPROVE.value
         and approval.role in required_roles
     )
-    
+
     has_required = len(approved_roles.intersection(set(required_roles))) > 0
     return matching_approvals >= required_approvals and has_required
 
@@ -200,13 +203,13 @@ class ExecutionHarnessService:
             .with_for_update()
         )
         result = row.one_or_none()
-        
+
         if result is None:
             raise ResourceNotFound("Pipeline 版本不存在")
-        
+
         version: PipelineVersion = result[0]
         actual_project_id: uuid.UUID = result[1]
-        
+
         if actual_project_id != project_uuid:
             raise PermissionDenied("Pipeline 版本不属于指定项目")
 
@@ -235,13 +238,18 @@ class ExecutionHarnessService:
             actor_roles=[],
             policy_bundle_version="v1.0.0",
         )
-        
+
         request = PolicyEvaluationRequest(
             intent=intent,
             context=context,
         )
-        
-        policy_decision = await self._pdp.evaluate(request)
+
+        # 先持久化决策父行：execution_preparations.policy_decision_id 是指向
+        # harness_policy_decisions.id 的外键，缺父行时在 PostgreSQL 下会外键失败；
+        # evaluate_and_record 同时完成评估与落库，返回的决策 id 即父行 UUID。
+        policy_decision = await PolicyDecisionService(self._pdp).evaluate_and_record(
+            session, request=request
+        )
 
         # If DENY: raise DomainError
         if policy_decision.outcome.value == "DENY":
@@ -251,23 +259,27 @@ class ExecutionHarnessService:
         idempotency_key = f"prep-{uuid.uuid4().hex[:16]}"
 
         # Compute artifact SHA-256 fingerprint
-        input_fingerprint = canonical_sha256({
-            "tool_name": intent.tool_name,
-            "action": intent.action,
-            "project_id": str(intent.project_id),
-            "actor_id": str(intent.actor_id),
-        })
-        
-        resource_fingerprint = canonical_sha256({
-            "resource_scopes": [
-                {
-                    "project_id": str(scope.project_id),
-                    "resource_type": scope.resource_type,
-                    "resource_id": scope.resource_id,
-                }
-                for scope in intent.resource_scopes
-            ]
-        })
+        input_fingerprint = canonical_sha256(
+            {
+                "tool_name": intent.tool_name,
+                "action": intent.action,
+                "project_id": str(intent.project_id),
+                "actor_id": str(intent.actor_id),
+            }
+        )
+
+        resource_fingerprint = canonical_sha256(
+            {
+                "resource_scopes": [
+                    {
+                        "project_id": str(scope.project_id),
+                        "resource_type": scope.resource_type,
+                        "resource_id": scope.resource_id,
+                    }
+                    for scope in intent.resource_scopes
+                ]
+            }
+        )
 
         # Create ExecutionPreparation record with frozen facts
         preparation = ExecutionPreparation(
@@ -292,7 +304,7 @@ class ExecutionHarnessService:
                 "effects": [effect.value for effect in intent.effects],
                 "bounded": intent.bounded,
             },
-            policy_context=context.__dict__,
+            policy_context=context.model_dump(mode="json"),
             prepared_input={},
             impact_report={
                 "pipeline_version_id": str(version_uuid),
@@ -306,7 +318,7 @@ class ExecutionHarnessService:
             requested_by=actor_uuid,
             expires_at=policy_decision.expires_at or (now + timedelta(days=1)),
         )
-        
+
         session.add(preparation)
         await session.flush()
 
@@ -358,14 +370,14 @@ class ExecutionHarnessService:
             .where(ExecutionPreparation.id == prep_uuid)
             .with_for_update()
         )
-        
+
         if preparation is None:
             raise ResourceNotFound("ExecutionPreparation 不存在")
 
         # Check preparation status
         if preparation.status == ExecutionPreparationStatus.EXPIRED.value:
             raise VersionConflict("Preparation 已过期，请重新发起")
-        
+
         if preparation.status not in [
             ExecutionPreparationStatus.WAITING_APPROVAL.value,
             ExecutionPreparationStatus.READY.value,
@@ -391,7 +403,7 @@ class ExecutionHarnessService:
                 HarnessApprovalDecision.role == harness_role.value,
             )
         )
-        
+
         if existing_role_decision is not None:
             raise VersionConflict("该审批职责已经由其他决定占用")
 
@@ -402,7 +414,7 @@ class ExecutionHarnessService:
                 HarnessApprovalDecision.decided_by == actor_uuid,
             )
         )
-        
+
         if existing_actor_decision is not None:
             raise PermissionDenied("同一自然人不能覆盖多个审批职责槽位")
 
@@ -418,7 +430,7 @@ class ExecutionHarnessService:
             "reason": reason or "",
             "decided_at": decided_at.isoformat(),
         }
-        
+
         approval = HarnessApprovalDecision(
             preparation_id=prep_uuid,
             role=harness_role.value,
@@ -428,7 +440,7 @@ class ExecutionHarnessService:
             evidence_sha256=canonical_sha256(evidence_document),
             decided_at=decided_at,
         )
-        
+
         session.add(approval)
         await session.flush()
 
@@ -446,14 +458,14 @@ class ExecutionHarnessService:
                     )
                 ).all()
             )
-            
+
             if _require_all_approvals(
                 approvals,
                 preparation.required_roles,
                 preparation.required_approvals,
             ):
                 preparation.status = ExecutionPreparationStatus.READY.value
-        
+
         preparation.lock_version += 1
         await session.flush()
 
@@ -477,15 +489,14 @@ class ExecutionHarnessService:
             .where(ExecutionPreparation.id == prep_uuid)
             .with_for_update()
         )
-        
+
         if preparation is None:
             raise ResourceNotFound("ExecutionPreparation 不存在")
 
-        # Verify preparation is fully approved
-        if preparation.status != ExecutionPreparationStatus.READY.value:
-            raise VersionConflict("Preparation 尚未满足全部审批要求")
-
-        # Check if already committed
+        # 已提交的 Preparation 必须幂等返回既有 Run：一次性能力令牌在首次 Commit
+        # 时已消费，重复提交不能把同一份授权再花一次，也不能退化成 409 让调用方
+        # 以为执行没发生。这一段必须在 READY 校验之前，否则 COMMITTED 永远先被
+        # READY 分支拦下而成为不可达代码。
         if preparation.status == ExecutionPreparationStatus.COMMITTED.value:
             existing_run = await session.scalar(
                 select(ExecutionRun).where(
@@ -496,9 +507,13 @@ class ExecutionHarnessService:
                     )
                 )
             )
-            if existing_run:
-                return str(existing_run.id)
-            raise VersionConflict("Preparation 已提交但执行记录缺失")
+            if existing_run is None:
+                raise VersionConflict("Preparation 已提交但执行记录缺失")
+            return str(existing_run.id)
+
+        # Verify preparation is fully approved
+        if preparation.status != ExecutionPreparationStatus.READY.value:
+            raise VersionConflict("Preparation 尚未满足全部审批要求")
 
         # Verify all approvals are present
         approvals = list(
@@ -510,7 +525,7 @@ class ExecutionHarnessService:
                 )
             ).all()
         )
-        
+
         if not _require_all_approvals(
             approvals,
             preparation.required_roles,
@@ -524,7 +539,7 @@ class ExecutionHarnessService:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=UTC)
         token_expiry = min(expires_at, now + timedelta(minutes=5))
-        
+
         if token_expiry <= now:
             preparation.status = ExecutionPreparationStatus.EXPIRED.value
             raise VersionConflict("Preparation 已过期，请重新发起")
@@ -545,11 +560,13 @@ class ExecutionHarnessService:
             expires_at=token_expiry,
             single_use=True,
         )
-        
+
         # Issue token
         token = self._token_issuer.issue(claims.model_dump(mode="json"), expires_in_seconds=300)
-        claims_signature = canonical_sha256(canonical_json_bytes(claims))
-        
+        # CapabilityClaims 是 pydantic 模型，不能直接交给 json.dumps；先转成 JSON 安全
+        # 的 dict（UUID/枚举/datetime 都会变成字符串）再计算规范摘要。
+        claims_signature = canonical_sha256(canonical_json_bytes(claims.model_dump(mode="json")))
+
         # Create capability grant record
         grant = HarnessCapabilityGrant(
             token_id=claims.token_id,
@@ -566,12 +583,19 @@ class ExecutionHarnessService:
         session.add(grant)
         await session.flush()
 
+        # 一次性消费：Commit 是能力令牌唯一的授权落点，消费事实与 Run / Outbox /
+        # 证据在同一事务提交，任何一步失败都整体回滚，令牌不会被白白花掉。
+        if not await _PersistentTokenReplayGuard(session, consumed_by=actor_uuid).consume(
+            claims.token_id
+        ):
+            raise PermissionDenied("能力令牌已经使用，禁止重放")
+
         # Create ExecutionRun and outbox command using handler
         handler = _ExecutionCommitHandler(
             session=session,
             preparation=preparation,
         )
-        
+
         run, outbox = await handler.handle_commit(claims)
 
         # Link grant to execution run
@@ -602,7 +626,7 @@ class ExecutionHarnessService:
             },
             actor_id=actor_uuid,
         )
-        
+
         await session.flush()
 
         return str(run.id)

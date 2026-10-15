@@ -161,7 +161,7 @@ class PolicyRuleMatch:
 class PolicyDecision:
     """表示可持久化、可签名且能解释的 PDP 最终决策。"""
 
-    id: str
+    id: UUID
     project_id: UUID
     actor_id: UUID
     outcome: PolicyOutcome
@@ -305,7 +305,7 @@ def canonical_sha256(obj: Any) -> str:
         data = obj
     else:
         data = {"value": obj}
-    
+
     json_str = json.dumps(
         data,
         ensure_ascii=False,

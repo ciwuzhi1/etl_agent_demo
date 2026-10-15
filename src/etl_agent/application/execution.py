@@ -13,10 +13,19 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from etl_agent.application.runtime_supervision import (
+    RuntimeSupervisionService,
+    build_snapshot_row,
+    next_sequence_and_previous_hash,
+)
 from etl_agent.domain.enums import ExecutionStatus
 from etl_agent.domain.errors import DomainError
 from etl_agent.domain.state_machine import require_execution_transition
-from etl_agent.infrastructure.models import ExecutionRun
+from etl_agent.domain.supervision import RuntimeSupervisionDecision
+from etl_agent.infrastructure.models import (
+    ExecutionRun,
+    RuntimeSupervisionSnapshot,
+)
 
 
 class ExecutionService:
@@ -203,6 +212,48 @@ class ExecutionService:
         run.status = ExecutionStatus.CANCELLED
         run.cancelled_at = run.cancelled_at or datetime.now(UTC)
         await session.flush()
+
+    async def record_supervision(
+        self,
+        session: AsyncSession,
+        run_id: uuid.UUID,
+        decision: RuntimeSupervisionDecision,
+        *,
+        observed_at: datetime | None = None,
+    ) -> RuntimeSupervisionSnapshot:
+        """把一次监督决定落库为哈希链快照，并把最新动作回写到运行记录。
+
+        执行流程在每次引擎轮询后调用本方法：它复用 `build_snapshot_row` 保证哈希链
+        口径与 `RuntimeSupervisionService.observe` 一致，并更新 ExecutionRun 的
+        `supervision_action`；强动作（block_publish）同时置隔离标记，供发布门禁阻断。
+        """
+        run = await self._get_for_update(session, run_id)
+        timestamp = observed_at or datetime.now(UTC)
+        sequence, previous_hash = await next_sequence_and_previous_hash(session, run_id)
+        snapshot = build_snapshot_row(
+            decision,
+            run_id=run_id,
+            sequence=sequence,
+            previous_hash=previous_hash,
+            observed_at=timestamp,
+        )
+        session.add(snapshot)
+        run.supervision_action = decision.action.value
+        if decision.contract_sha256:
+            run.supervision_contract_sha256 = decision.contract_sha256
+        if decision.block_publish:
+            run.quarantined_at = run.quarantined_at or timestamp
+            run.quarantine_reason = "; ".join(match.reason for match in decision.matches)[:2000]
+        await session.flush()
+        return snapshot
+
+    async def assert_publish_allowed(
+        self,
+        session: AsyncSession,
+        run_id: uuid.UUID,
+    ) -> None:
+        """原子发布前的监督门禁：委托 `RuntimeSupervisionService` 阻断被隔离的运行。"""
+        await RuntimeSupervisionService().require_publish_allowed(session, run_id)
 
     async def _get_for_update(self, session: AsyncSession, run_id: uuid.UUID) -> ExecutionRun:
         """带行锁查询 ExecutionRun，防止并发修改。

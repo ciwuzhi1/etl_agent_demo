@@ -7,7 +7,7 @@ import { useSession } from '@/composables/useSession'
 const session = useSession()
 
 const options = computed(() =>
-  session.actors.map((actor) => ({ label: `${actor.name} · ${actor.title}`, value: actor.id })),
+  session.actors.value.map((actor) => ({ label: `${actor.name} · ${actor.title}`, value: actor.id })),
 )
 
 const value = computed(() => session.currentActor.value?.id ?? null)
