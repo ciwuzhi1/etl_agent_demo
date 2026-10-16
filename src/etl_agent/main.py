@@ -41,14 +41,14 @@ app.include_router(safety_evolution.router, prefix=settings.api_prefix)
 app.include_router(console.router, prefix=settings.api_prefix)
 app.include_router(execution_preparations.router, prefix=settings.api_prefix)
 app.include_router(studio.router, prefix=settings.api_prefix)
-# 后续章节的业务路由按章节顺序在此追加。
+# 其余业务路由在此追加。
 
 
 @app.exception_handler(DomainError)
 async def domain_error_handler(_request: Request, exc: DomainError) -> JSONResponse:
     """把领域异常映射为稳定 HTTP 错误结构。
 
-    Trace ID 关联要等第 10 章的 observability 落地后补入；本章只保证状态码与错误语义。
+    Trace ID 关联待 observability 落地后补入；当前只保证状态码与错误语义。
     """
     status_code = 400
     if isinstance(exc, PermissionDenied):

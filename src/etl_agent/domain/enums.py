@@ -1,4 +1,4 @@
-"""领域枚举：全系统共用的"固定词汇表"。课件 §3.3。
+"""领域枚举：全系统共用的"固定词汇表"。
 
 这里只回答"有哪些合法取值"，不回答"取值之间怎样变化"——后者在
 `domain/state_machine.py`。API 入参、数据库列、Worker 判断三处必须引用同一批
@@ -8,13 +8,13 @@
 统一用 `StrEnum`：写进数据库就是普通字符串（迁移和手写 SQL 都能看懂），
 读出来仍能用枚举成员做 `is` / `==` 比较，不用到处 `str()`。
 
-类顺序沿用参考实现，不承载语义；读的时候按主题找：ProjectRole 与 HarnessRole
+类顺序不承载语义；读的时候按主题找：ProjectRole 与 HarnessRole
 （domain/harness.py）是两套东西——前者回答"你在这个项目里算什么"，后者回答
 "你能不能承担审批/提交这个动作"，分开才能保住四眼分离。
 
-⚠️ 本文件是课件给出的**最终形态**（28 个类）。带 `Secret*`、`CredentialAlert*`、
-`Schedule*`、`FileAsset*`、`Rollback*`、`Cleanup*`、`AgentRun*` 的枚举要到
-第 4–13 章才真正启用。现在只是把词汇钉住，**不代表那些功能已经可用**。
+⚠️ 本文件是**最终形态**（28 个类）。带 `Secret*`、`CredentialAlert*`、
+`Schedule*`、`FileAsset*`、`Rollback*`、`Cleanup*`、`AgentRun*` 的枚举目前还没有
+使用方，属于后续能力。现在只是把词汇钉住，**不代表那些功能已经可用**。
 """
 
 from enum import StrEnum
@@ -61,7 +61,7 @@ class ApprovalDecisionValue(StrEnum):
 
 
 class RollbackStatus(StrEnum):
-    """回滚工单状态（第 10 章之后启用）。"""
+    """回滚工单状态（当前尚未启用）。"""
 
     PENDING = "PENDING"
     APPROVED = "APPROVED"
@@ -72,7 +72,7 @@ class RollbackStatus(StrEnum):
 
 
 class CleanupStatus(StrEnum):
-    """清理工单状态（第 10 章之后启用）。"""
+    """清理工单状态（当前尚未启用）。"""
 
     PENDING = "PENDING"
     APPROVED = "APPROVED"
@@ -83,7 +83,7 @@ class CleanupStatus(StrEnum):
 
 
 class SecretMigrationStatus(StrEnum):
-    """秘密在不同 Provider 之间迁移的工单状态（第 12 章）。"""
+    """秘密在不同 Provider 之间迁移的工单状态。"""
 
     PENDING = "PENDING"
     APPROVED = "APPROVED"
@@ -108,7 +108,7 @@ class SecretRotationStatus(StrEnum):
 
 
 class SecretRotationRollbackStatus(StrEnum):
-    """轮换出问题时回退到旧凭据的工单状态（第 12 章）。"""
+    """轮换出问题时回退到旧凭据的工单状态。"""
 
     PENDING = "PENDING"
     APPROVED = "APPROVED"
@@ -119,7 +119,7 @@ class SecretRotationRollbackStatus(StrEnum):
 
 
 class SecretDestructionStatus(StrEnum):
-    """秘密销毁的工单状态（第 12 章）。销毁要留墓碑，所以是工单而不是 delete。"""
+    """秘密销毁的工单状态。销毁要留墓碑，所以是工单而不是 delete。"""
 
     PENDING = "PENDING"
     APPROVED = "APPROVED"
@@ -184,14 +184,14 @@ class ExecutionTrigger(StrEnum):
 
 
 class ScheduleMode(StrEnum):
-    """调度模式：全量批次，或按水位线做增量（第 11 章之后）。"""
+    """调度模式：全量批次，或按水位线做增量（当前尚未启用）。"""
 
     BATCH = "BATCH"
     WATERMARK_INCREMENTAL = "WATERMARK_INCREMENTAL"
 
 
 class ScheduleMisfirePolicy(StrEnum):
-    """错过触发时刻怎么办：跳过这一轮，还是补跑一次（第 11 章之后）"""
+    """错过触发时刻怎么办：跳过这一轮，还是补跑一次（当前尚未启用）"""
 
     SKIP = "SKIP"
     FIRE_ONCE = "FIRE_ONCE"
@@ -234,7 +234,7 @@ class QualityStatus(StrEnum):
 
 
 class GenerationKind(StrEnum):
-    """向模型请求的三类内容。注意值是小写字符串，与其余枚举风格不同（照抄课件）。"""
+    """向模型请求的三类内容。注意值是小写字符串，与其余枚举风格不同。"""
 
     QUESTION = "question"
     CONFIG = "config"
@@ -280,7 +280,7 @@ class DataEndpointRole(StrEnum):
 
 
 class FileAssetFormat(StrEnum):
-    """受管文件资产的格式白名单（第 5 章启用）。"""
+    """受管文件资产的格式白名单。"""
 
     CSV = "CSV"
     JSON = "JSON"

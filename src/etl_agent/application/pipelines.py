@@ -1,6 +1,6 @@
 """Pipeline 应用服务：版本冻结、生成记录与确定性门禁。
 
-本章实现 PipelineService，负责：
+PipelineService 负责：
 - 创建 Pipeline 和首个 DRAFT 版本
 - 记录生成的 Artifact（HOCON + Plan）并计算 SHA-256
 - 执行状态机转换（GENERATED -> VALIDATED）
@@ -51,7 +51,7 @@ def artifact_digest(hocon: str, plan: dict[str, Any]) -> str:
 def require_generation_contract(plan: dict[str, Any], hocon: str) -> None:
     """生成制品的纯确定性门禁，供 Agent 和外部导入路径共用。
 
-    第 9 章简化版：只校验核心契约，不包含质量、增量、行级 LLM 等高级功能。
+    只校验核心契约，不包含质量、增量、行级 LLM 等高级功能。
     """
     # 安全策略：禁止硬编码秘密
     require_no_hardcoded_secrets(hocon)

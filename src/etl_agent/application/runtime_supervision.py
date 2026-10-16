@@ -1,4 +1,4 @@
-"""运行时监督应用层：第 13 章（Runtime Supervision）。
+"""运行时监督应用层：Runtime Supervision。
 
 两个协作角色：
 - `RuntimeSupervisor`：对**脱敏指标**执行确定性预算规则，不调用模型、不修改 Pipeline
@@ -8,8 +8,7 @@
 - `RuntimeSupervisionService`：持久化快照（带 SHA-256 哈希链）、认领并完成外部减损
   副作用、在原子发布前隔离被判定为 P0 的运行结果。
 
-设计原则（对齐参考实现 `etl_agent.application.runtime_supervision` 但适配 demo 的轻量
-Harness）：
+设计原则（适配本项目轻量 Harness）：
 1. **硬上限优先**：任一硬上限命中即取最严格动作；只有全部硬上限未命中时才看告警阈值。
 2. **只减权一致性**：CONTINUE 不得携带 cancel_required / block_publish；强动作必须
    附带确定性规则证据（matches 非空）。

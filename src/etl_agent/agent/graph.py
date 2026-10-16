@@ -1,9 +1,7 @@
-"""LangGraph 六节点状态机骨架。
+"""LangGraph 六节点生成状态机。
 
-第 8 章核心：用 LangGraph 管理从"请求生成"到"等待审批"的完整流程。
+用 LangGraph 管理从"请求生成"到"等待审批"的完整流程。
 六节点：generate → clarify → repair_generation → policy → wait_for_review → failed
-
-本章先建接口定义，等 LangGraph 包安装后再补完整状态机逻辑。
 """
 
 from collections.abc import Awaitable, Callable

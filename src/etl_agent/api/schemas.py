@@ -1,4 +1,4 @@
-"""API 请求与响应模型（Pydantic）。课件 §3.8 / §4.8。
+"""API 请求与响应模型（Pydantic）。
 
 这些类是对外契约，承担三件事：
 1. 入参校验（长度、范围、枚举），让路由里不必再手写 if；
@@ -55,7 +55,7 @@ class BootstrapProjectRequest(BaseModel):
 
 
 class BootstrapProjectResponse(BaseModel):
-    """只返回两个 UUID。Token 不进响应，也不写审计（课件 §3.6）。"""
+    """只返回两个 UUID。Token 不进响应，也不写审计。"""
 
     project_id: uuid.UUID
     actor_id: uuid.UUID
@@ -182,8 +182,8 @@ class DataProfileResponse(BaseModel):
 class FileAssetResponse(BaseModel):
     """文件资产响应：物理上不含 source_uri/normalized_uri/engine_path/file-asset:// URI。
 
-    课件 §5.5（第 5 章）要求响应模型只回文件名、格式、字节、SHA-256、状态、Schema、
-    统计、脱敏样本、行数、过期时间、错误；内部定位由存储 Adapter 和 Worker 认识。
+    响应模型只回文件名、格式、字节、SHA-256、状态、Schema、统计、脱敏样本、行数、
+    过期时间、错误；内部定位由存储 Adapter 和 Worker 认识。
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -204,7 +204,7 @@ class FileAssetResponse(BaseModel):
 
 
 class AgentRunCreateRequest(BaseModel):
-    """第 8 章：发起一次自然语言驱动的生成任务。
+    """发起一次自然语言驱动的生成任务。
 
     profile_ids 只是给 Agent 的元数据线索，是否可用由服务端重新校验；
     trace_id 允许为空，路由会退回 X-Trace-ID 请求头。
@@ -216,7 +216,7 @@ class AgentRunCreateRequest(BaseModel):
 
 
 class AgentRunAnswerRequest(BaseModel):
-    """第 8 章澄清恢复入参：把用户对模型追问的回答追加进会话历史。
+    """澄清恢复入参：把用户对模型追问的回答追加进会话历史。
 
     只接受非空纯文本，长度上限与需求文本同级（4000），避免把大段内容塞进会话历史；
     答案不含凭据校验，安全边界由后续确定性门禁负责。
@@ -243,7 +243,7 @@ class AgentRunResponse(BaseModel):
 
 
 class PipelineCreateRequest(BaseModel):
-    """第 9 章：创建 Pipeline 并同时冻结首个 DRAFT 版本的需求文本。"""
+    """创建 Pipeline 并同时冻结首个 DRAFT 版本的需求文本。"""
 
     name: str = Field(min_length=1, max_length=255)
     requirement: str = Field(min_length=1, max_length=4000)
@@ -359,7 +359,7 @@ class QualityReportResponse(BaseModel):
 
 
 class CreateSideEffectPreparationRequest(BaseModel):
-    """第 12 章：发起一次受治理副作用。
+    """发起一次受治理副作用。
 
     context 是要冻结的业务事实（如 run_id、job_id、目标表名），响应不回显它；
     幂等键可省略，服务端按「操作类型:聚合根 ID」自动派生。
@@ -372,7 +372,7 @@ class CreateSideEffectPreparationRequest(BaseModel):
 
 
 class SideEffectApprovalRequest(BaseModel):
-    """第 12 章：占用一个职责审批槽；role 必须是该 Preparation 要求的职责之一。"""
+    """占用一个职责审批槽；role 必须是该 Preparation 要求的职责之一。"""
 
     role: HarnessRole
     decision: HarnessApprovalValue
@@ -555,7 +555,7 @@ class WorkspaceContextResponse(BaseModel):
 
 
 class PrepareExecutionRequest(BaseModel):
-    """第 11 章：从 Pipeline 版本发起一次执行准备。
+    """从 Pipeline 版本发起一次执行准备。
 
     intent 可以省略：省略时服务端按固定执行契约构造 ToolIntent。即使显式提供，
     也只能描述工具名与副作用，``actor_id`` / ``project_id`` 一律由服务端从版本回溯，
@@ -566,7 +566,7 @@ class PrepareExecutionRequest(BaseModel):
 
 
 class DecidePreparationRequest(BaseModel):
-    """第 11 章：占用一个 Harness 职责审批槽；role 必须是该准备单要求的职责之一。"""
+    """占用一个 Harness 职责审批槽；role 必须是该准备单要求的职责之一。"""
 
     role: HarnessRole
     decision: HarnessApprovalValue

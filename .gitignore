@@ -30,7 +30,14 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 /.commandcode/
-/docs/
 
 # Celery Beat 本地调度状态（运行期生成，不提交）
 celerybeat-schedule*
+
+# 提示词草稿（仅本机保留）
+/prompt/
+
+# 本地参考资料（仅本机保留，不随仓库分发）
+/尚硅谷大模型项目之生产级ETL-Agent.md
+/docs/etl.pen
+/prd.md

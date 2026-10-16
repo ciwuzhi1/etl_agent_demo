@@ -1,11 +1,11 @@
 """Agent 生成任务：把自然语言需求经 LangGraph 状态机转化为候选 HOCON。
 
-第 8 章核心落库入口。任务只接 AgentRun UUID，读取脱敏上下文后在 Worker 内跑图：
+任务只接 AgentRun UUID，读取脱敏上下文后在 Worker 内跑图：
 
 - 生成端口由 `infrastructure/generation_factory.create_generation_adapter()` 提供，
   切换后端不改变本任务的语义。
 - 图的 `clarify` / `wait_for_review` 节点靠 `interrupt` 暂停，而 `interrupt` 必须有
-  Checkpoint 才能工作；因此这里优先用第 8 章 PostgreSQL Checkpoint，未实现时容错
+  Checkpoint 才能工作；因此这里优先用 PostgreSQL Checkpoint，未实现时容错
   退回 `MemorySaver`，保证任务真正能跑起来而不是崩在基础设施未就绪上。
 - 写回纪律：`candidate_hocon` 只在门禁通过、进入人工审批时落库；失败只写固定脱敏
   文案，`generation_*` 统计只保留次数/耗时/非敏感诊断，不保存 Prompt、模型正文或凭据。

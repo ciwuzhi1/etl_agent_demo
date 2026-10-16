@@ -1,8 +1,9 @@
 """managed file assets: file_assets table + index + checks
 
-课件 §5.3（第 5 章）要求把异构文件接进受管链路，故建 file_assets 表。
-参考实现放在 20260807_0022（down_revision=20260807_0021），我们链头是 20260804_0002，
-故自写 0003 承接；后续复刻参考迁移时必须跳过其中的 file_assets 建表段与索引段。
+把异构文件接进受管链路需要 file_assets 表。
+上游迁移把它放在 20260807_0022（down_revision=20260807_0021），
+而本仓库链头是 20260804_0002，故自写 0003 承接；
+后续迁移必须跳过其中的 file_assets 建表段与索引段。
 """
 
 import sqlalchemy as sa

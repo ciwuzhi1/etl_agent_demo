@@ -4,7 +4,7 @@ Revision ID: 20260804_0004
 Revises: 20260804_0003
 Create Date: 2026-10-15
 
-课件第 6 章把 quality/incremental/row_llm 三个契约快照写进制品，
+quality/incremental/row_llm 三个契约快照写入制品，
 但本仓库的落点是 `agent_runs.metadata_context` 与 `pipeline_versions.plan`
 这两个 JSON 列（见 `agent/graph.py`），而不是 agent_runs 上的独立列。
 原先这里写的是 `ALTER TABLE agent_runs ADD COLUMN quality_contract`，

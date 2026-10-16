@@ -83,11 +83,6 @@ packages = ["src/etl_agent"]
 addopts = "-q --strict-markers --strict-config"
 asyncio_mode = "auto"
 testpaths = ["tests"]
-markers = [
-    "simulation_l0: 无外部副作用的静态策略、权限与制品攻击仿真",
-    "simulation_l1: 仅在模拟器内注入故障、重放、超时和部分成功",
-    "simulation_l2: 需要开发 Compose 的真实 MySQL/文件、SeaTunnel 与 Doris 链路",
-]
 
 [tool.ruff]
 line-length = 100
@@ -103,6 +98,10 @@ ignore = [
     "RUF003",
     "UP047",  # 当前保持 Python 3.12 也易读的 TypeVar 写法。
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# 脚本内嵌 SeaTunnel HOCON 制品与长 f-string 报表文案，按原样保留更易核对。
+"scripts/**" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

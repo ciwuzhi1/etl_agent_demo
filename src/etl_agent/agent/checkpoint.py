@@ -1,7 +1,8 @@
 """LangGraph Checkpoint 持久化配置。
 
-第 8 章要求使用 PostgreSQL 作为 Checkpoint 后端，让 AgentRun 能在中断后恢复。
-本章先建骨架，等 LangGraph 包安装后再补完整实现。
+Checkpoint 让 AgentRun 在中断（澄清追问、人工审批）后能从同一状态继续。
+PostgreSQL 后端依赖 langgraph-checkpoint-postgres，该包当前未安装，因此这里
+先以 NotImplementedError 占位，由调用方降级到内存 Checkpoint。
 """
 
 from typing import Any
@@ -20,8 +21,6 @@ def create_checkpoint_saver(database_url: str) -> Any:
         需要安装 langgraph-checkpoint-postgres 包
     """
     # TODO: 实现 PostgreSQL Checkpoint 后端
-    # from langgraph.checkpoint.postgres import PostgresSaver
-    # return PostgresSaver.from_conn_string(database_url)
     raise NotImplementedError(
-        "LangGraph Checkpoint 后端尚未实现，需先安装 langgraph-checkpoint-postgres"
+        "LangGraph Checkpoint 后端尚未实现：需先安装 langgraph-checkpoint-postgres"
     )

@@ -1,6 +1,6 @@
 """ExecutionService：管理 ExecutionRun 的生命周期状态转换。
 
-第 10 章核心：负责执行记录从 QUEUED → SUBMITTED → RUNNING → SUCCEEDED/FAILED/CANCELLED
+负责执行记录从 QUEUED → SUBMITTED → RUNNING → SUCCEEDED/FAILED/CANCELLED
 的状态流转，并记录 SeaTunnel JobId、指标、错误诊断等关键信息。
 
 注意：当前使用 ExecutionRun 模型（来自 infrastructure.models），该模型已在 models.py 中定义。
@@ -119,7 +119,7 @@ class ExecutionService:
             DomainError: 如果状态转换非法或记录不存在
 
         Note:
-            指标字段已在 ExecutionRun 模型中定义（第 10 章）。
+            指标字段已在 ExecutionRun 模型中定义。
         """
         run = await self._get_for_update(session, run_id)
 

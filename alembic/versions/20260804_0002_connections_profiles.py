@@ -58,10 +58,9 @@ def timestamps() -> list[sa.Column]:
 def upgrade() -> None:
     """向前应用本版本数据库结构变更；DDL 必须与当前 ORM 元数据保持一致。
 
-    本章的 §4.4 SecretProvider 代码同时要求 `provider`/`external_ref`/`destroyed_at`
-    （参考实现把它们放在 0013、0017）以及 §4.8 响应模型要求的凭据年龄列
-    （参考实现放在 0018）。为了让第 4 章的代码可以在本章真实跑通，这里一并建立；
-    后续章节补迁移时必须跳过这些列。
+    SecretProvider 需要 `provider`/`external_ref`/`destroyed_at` 三列，
+    响应模型还需要凭据年龄列，因此在本版本一并建立，使相关代码可直接跑通；
+    后续补迁移时必须跳过这些列，避免重复添加。
     """
     op.create_table(
         "encrypted_secrets",

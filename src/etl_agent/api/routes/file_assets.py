@@ -1,9 +1,8 @@
 """文件资产 API：上传、列表与查询。
 
-课件 §5.5（第 5 章）要求三个端点：
+三个端点：
 POST /projects/{id}/file-assets（202 + PENDING，三段事务边界）、
 GET /projects/{id}/file-assets、GET /file-assets/{asset_id}。
-参考实现 111 行，与课件 5807–5917 清单逐字一致。
 """
 
 import uuid

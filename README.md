@@ -1,148 +1,229 @@
-# SeaTunnel-native 企业级 ETL Agent
+# etl_agent
 
-etl_agent 是面向企业 ETL 任务的智能**控制面**：理解自然语言需求、探查受管元数据、生成候选方案、
-请求具名审批并跟踪执行结果；真正的数据搬运交给 Apache SeaTunnel Zeta。产品只做一件事并做到底：
-**模型只负责“提建议”，从建议到真实副作用的每一道关口都由确定性代码和具名的人把守。**
+面向企业 ETL 任务的智能**控制面**。
 
-## 架构总览（课件终态蓝图）
+`etl_agent` 理解自然语言需求、探查受管元数据、生成候选方案、请求具名审批，并跟踪执行结果；
+真正的数据搬运交给 Apache SeaTunnel Zeta。产品只做一件事并做到底：
 
-- **控制面**：FastAPI（API）+ Celery（Worker / Beat）三进程，模块化单体，共享一个 PostgreSQL 业务库。
-- **数据面**：Apache SeaTunnel Zeta，控制面通过 REST 提交已物化制品。
-- **Harness 内核**：PDP 策略裁决 / Tool Broker / Prepare→Approve→Commit / 一次性 Capability /
-  事务 Outbox / Evidence Ledger 哈希链。
-- **Agent 编排**：LangGraph 六节点状态机，Checkpoint 使用独立数据库。
+> 模型只负责「提建议」，从建议到真实副作用的每一道关口，都由确定性代码和具名的人把守。
 
-> 上面是**第 15 章的终态**，不是本仓库今天的样子。本仓库按课件章节逐章推进，
-> 每一章只建该章要求的东西；当前真实状态见下面「当前实现进度」。
+## 功能
 
-## 当前实现进度（第 1–15 章全链已实测通过）
+**受管数据接入**
+- 数据连接登记与连通性测试；凭据经 SecretProvider（Fernet 加密入库 / Vault）保管，明文不落日志、不进响应
+- 只读探查生成脱敏 `DataProfile`（样本返回前完成字段级脱敏，不进 LLM 提示词）
+- 受管文件资产上传：临时文件 + 原子替换、SHA-256 去重、九种格式解析（CSV / JSON / JSONL / Excel / Parquet / ORC / PDF / 文本 / 定长）
 
-| 章节 | 已交付 | 复核方式 |
-|---|---|---|
-| 第 1 章 | 本机 MySQL 样例库 `source_db.orders`（8 行 Golden Case，含 4 条拒绝规则） | 见 `docs/第1章-待完成计划表.md` F/I 组 |
-| 第 2 章 | `config.py` 生产边界校验、`main.py` + `/health`、`database.py`、`worker.py` 骨架、`.env` | `uv run ruff check src tests alembic`、`curl http://127.0.0.1:8000/health` |
-| 第 3 章 | 领域枚举/异常/状态机、10 张业务表（`0001`）、身份 dev-header + 网关 HMAC+Nonce、Bootstrap 与成员职责接口 | `uv run pytest tests`、`uv run alembic check` |
-| 第 4 章 | SecretProvider（Fernet/Vault）、MySQL 探查 Adapter + ProbeRegistry、Celery 连接与探查任务、脱敏 `DataProfile`、连接与 Profile API | `uv run pytest tests/unit/test_connections.py tests/unit/test_mysql_probe.py` |
-| 第 5 章 | FileAsset 模型 + 迁移 0003、九种格式解析器、原子存储 + SHA-256、三段事务上传 API、Worker 异步解析 | `uv run pytest tests/unit/test_file_assets.py`（6 passed） |
-| 第 6 章 | ETL 契约验证（`schema_contract.py`）、Profile 快照、拓扑门禁、HDFS/数据库端点绑定、目标 Schema 对齐、三个 JSON 列迁移 | `uv run pytest tests/unit/test_schema_contract.py`（17 passed） |
-| 第 7 章 | 生成适配器 Port 协议、Mock/Direct 两种适配器、工厂函数、6 个单元测试 | `uv run pytest tests/unit/test_generation.py`（6 passed） |
-| 第 8 章 | LangGraph 六节点状态机、AgentRunService、credential_materialization | `uv run pytest tests` |
-| 第 9 章 | PipelineService 版本冻结 + SHA-256 artifact_digest、ApprovalService 四眼审批、`agent_runs/pipelines/approvals` API 路由 | `uv run pytest tests` |
-| 第 10 章 | Zeta REST Adapter、ExecutionService、失败诊断、指标归一化、`executions` API 路由 | `uv run pytest tests` |
-| 第 11 章 | Harness 内核：PDP（11 条规则清单，含 baseline-allow）、ToolBroker、Ed25519 签名、Evidence Ledger 哈希链、Outbox 投递、角色映射 | `uv run pytest tests` |
-| 第 12 章 | SideEffectHarnessService（9 种副作用 prepare/decide/commit）、`side_effects` API 路由、迁移 0009（3 张表） | `uv run pytest tests/unit/test_side_effects.py`（12 passed） |
-| 第 13 章 | RuntimeSupervisor + 6 条预算规则、RuntimeSupervisionService 快照链、迁移 0010 | `uv run pytest tests/unit/test_runtime_supervision.py`（15 passed） |
-| 第 14 章 | HarnessBenchmarkRunner（可重复性+双人群+门禁）、SafetyEvolutionService（DRAFT→shadow→canary→promote）、CLI、`safety_evolution` API 路由、迁移 0011 | `uv run pytest tests/unit/test_benchmark.py tests/unit/test_safety_evolution.py`（20 passed） |
-| 第 15 章 | 前端五视图完整 + 5 个 services 切换到真实后端 API（`connections/execution/governance/overview/studio`）+ Vite `/health` 代理 | `frontend/src/services/*.ts` |
+**Agent 生成**
+- 自然语言需求 → LangGraph 六节点状态机（需求解析 → 上下文装载 → 方案生成 → 契约校验 → 审批挂起 → 收尾）
+- 生成后端可切换：`direct` 直连模型，或黑盒 CLI 适配器
+- 澄清中断可恢复：`WAITING_INPUT` 状态下提交回答继续跑图，图状态存独立 Checkpoint 库
 
-- 迁移链：`20260804_0001 → 0002 → … → 0012`（单 head，13 个迁移文件）；PostgreSQL 业务库 **30 张表**（含 agent_runs / side_effect / supervision / benchmark / safety / worker_heartbeats 等）。
-- 测试：`uv run pytest tests` → **135 passed**（16 个测试文件；`tests/simulation/` 仍是模板留下的空壳，L1/L2 场景待专门章节）。
-- 静态检查：`ruff check` 与 `ruff format --check` 全绿，`mypy`（strict）在 86 个源文件上无问题。
-- API 端点：`main.py` 注册 14 个路由（health/projects/connections/file_assets/agent_runs/pipelines/approvals/executions/side_effects/safety_evolution/console/execution_preparations/studio），OpenAPI 暴露 59 条路径，完整覆盖 1-15 章。
+**契约与审批**
+- ETL 契约校验：Schema 对齐、拓扑校验、Profile 快照比对
+- Pipeline 版本冻结：制品 SHA-256 摘要，版本一经批准不可静默改写
+- 四眼审批：申请人与审批人分离，同一自然人不得占用两个审批槽
 
-**已知限制（诚实标注）**：
-- 第 10 章 SeaTunnel 真实提交/监控 Celery 任务与 e2e Profile 联调待启用；`zeta_adapter.py` 已具备但需真实引擎。
-- 第 11 章 Side Effect Harness 归入 Ch12 完整实现；Ch11 保留核心 Harness 模块。
-- 第 12-14 章的运行时依赖（`harness_side_effect_preparations` 等）已建表和迁移，但生产环境的 Ed25519 密钥、Doris 原子发布、e2e 联调尚未验证。
+**执行与观测**
+- 经 REST 把已物化制品提交给 SeaTunnel Zeta；提交成功后经事务 Outbox 自续投递监控命令
+- 执行指标归一化：从引擎 `/job-info` 取真实行数 / 字节数回写（源 8 行 → 汇 4 行这类差异可追溯）
+- 失败诊断：确定性匹配失败类别与失败环节，落库只写脱敏文案
+- 运行时监督：按记录数、字节数、超时、输出比例、拒绝率、最小质量样本量六条预算规则生成快照链
 
-### 本机基础设施实际状态（2026-10-14 实测）
+**Harness 内核**
+- PDP 策略裁决、Tool Broker、Prepare→Approve→Commit、一次性 Capability、事务 Outbox、Ed25519 签名的 Evidence Ledger 哈希链
+- 九类副作用的 prepare / decide / commit 全流程治理（含 Doris 影子表原子发布与回滚）
 
-| 组件 | 状态 | 备注 |
-|---|---|---|
-| PostgreSQL 17 / Redis 8 | `docker compose -f infra/compose.yaml up -d postgres redis`，两容器 healthy | `etl_agent` 业务库 + `etl_checkpoint` 会话库 |
-| MySQL 8.0.26 | 本机 `127.0.0.1:3306`，样例库 `source_db.orders` | **不是** Compose 的 mysql:8.4；探查用只读账号 `etl_reader`（仅 `SELECT ON source_db.*`），不用 root |
-| `e2e` Profile（mysql-e2e / Doris / SeaTunnel） | 未启动 | 你的口径是"暂时不用管"（2026-10-14）；等需要 Doris/SeaTunnel 的章节再启用。`infra/e2e/` 目前只有 `mysql-init.sql` |
-| 凭据 | `.env`（已 gitignore）：Fernet 主密钥已生成并验证；`ETL_AGENT_SECRET_PROVIDER=fernet-db` | Vault 相关项留空，代码路径已具备但未启用 |
-| 已知隔离偏差 | `etl_checkpoint` 账号可 CONNECT 进业务库 `etl_agent`（当前无表可读） | 记在 `docs/第1章-待完成计划表.md` G-1，收紧需重建数据卷，待你决定 |
+**安全进化与基准**
+- 提案签名 → 影子验证 → 小流量 → 晋升，任一环节命中 P0/P1 回归或误报越线即自动回滚
+- 可重复性基准：双人群跑分 + 门限判定
 
-### 复现第 4 章链路
+**Web 控制台**
+- Vue 3 单页应用，五个视图：总览 / 数据连接 / Pipeline Studio / 运行中心 / 安全治理
 
-```powershell
-uv sync
-uv run alembic upgrade head
-uv run uvicorn etl_agent.main:app --host 127.0.0.1 --port 8000
-uv run celery -A etl_agent.worker.celery_app worker --loglevel=INFO --pool=solo   # Windows 教学环境用 solo
+## 技术栈
 
-# 教学身份：本地 dev-header 模式，用 X-Actor-Id 传项目成员 UUID
-# 路由挂在 settings.api_prefix 下，真实路径是 /api/v1/...（课件 §4.10.3 写的 /api/connections 是错的）
-```
-
+| 层 | 选型 |
+|---|---|
+| 语言 | Python 3.12 |
+| Web 框架 | FastAPI + Uvicorn |
+| 异步任务 | Celery（Worker + Beat），Redis 作 broker/backend |
+| 数据库 | PostgreSQL 17（业务库 + 独立 Checkpoint 库），SQLAlchemy 2.x async，Alembic 迁移 |
+| Agent 编排 | LangGraph + langgraph-checkpoint-postgres |
+| 加密与签名 | cryptography（Fernet）、PyNaCl（Ed25519） |
+| 可观测性 | OpenTelemetry（OTLP/HTTP，FastAPI / httpx / SQLAlchemy / Celery 自动埋点） |
+| 数据面 | Apache SeaTunnel Zeta 2.3.13（REST 提交） |
+| 受管数据源 / 汇 | MySQL 8.x、Apache Doris 3.x |
+| 前端 | Vue 3 + TypeScript + Vite + naive-ui + Tailwind CSS 4 |
+| 工具链 | uv（依赖管理）、ruff（lint + format）、mypy（strict）、pytest |
 
 ## 目录结构
 
 ```
 etl_agent_demo/
-├── pyproject.toml          # uv 工程配置（依赖、入口、工具链）
-├── alembic.ini             # Alembic 迁移入口
-├── .env.example            # 环境变量样例（复制为 .env 使用；本仓库 .env 已加中文分组注释）
-├── alembic/                # 数据库迁移脚手架（当前 head：20260804_0002）
-│   ├── env.py
-│   └── versions/
-├── src/etl_agent/          # 后端包（分层：api / application / domain / infrastructure）
-│   ├── agent/              # LangGraph 图与独立 Checkpoint        ← 第 8 章，尚未开始
-│   ├── api/                # FastAPI 路由与依赖装配（health / projects / connections）
-│   ├── application/        # 应用服务（project_members / harness_access / connections /
-│   │                       │   profiling / secrets / masking / policy）
-│   │                       #   ← file_assets、plan、generation、harness 等待后续章节
-│   ├── domain/             # 纯领域：枚举（28 个，终态词汇）/ 状态机 / 异常 / HarnessRole
-│   ├── infrastructure/     # 数据库 / 模型 / secret_factory / mysql_probe / probe_registry
-│   │                       #   ← 其余 5 个探针、seatunnel 适配、签名与 outbox 待后续章节
-│   ├── connection_tasks.py # Celery 任务（第 4 章）
-│   ├── asyncio_compat.py   # Windows 事件循环兼容（psycopg 不吃 Proactor）
-│   └── worker.py           # Celery 应用（include 现有 connection_tasks）
-├── tests/
-│   ├── unit/               # 6 个测试文件、20 个用例（第 3–4 章）
-│   └── simulation/         # L1/L2 场景 ← 空目录，属第 14 章
-├── infra/                  # 开发 Compose、初始化 SQL；e2e/ 目前只有 mysql-init.sql
-├── var/                    # 运行期产物（gitignore）：artifacts / file-assets / harness
-├── benchmarks/             # 冻结基准场景 ← 第 14 章
-├── docs/                   # 本仓库的工作文档，见下方「文档地图」
-└── frontend/               # Vue 3 + TS + Vite 控制台 ← 模板产物，第 15 章才接
+├── src/etl_agent/
+│   ├── api/                  # FastAPI 路由与 Pydantic 请求/响应模型
+│   ├── application/          # 应用服务：连接、探查、文件资产、生成、审批、执行、副作用、监督、基准
+│   ├── domain/               # 纯领域：枚举、状态机、异常、Harness 角色与策略
+│   ├── infrastructure/       # SQLAlchemy 模型、SecretProvider、数据库探针、SeaTunnel 适配器、文件存储
+│   ├── agent/                # LangGraph 图与 Checkpoint
+│   ├── config.py             # 带生产边界校验的设置
+│   ├── main.py               # FastAPI 应用装配
+│   ├── worker.py             # Celery 应用与调度
+│   └── *_tasks.py            # 各领域的 Worker 侧任务
+├── tests/                    # 单元测试
+├── alembic/versions/         # 数据库迁移（单 head）
+├── frontend/                 # Vue 3 控制台
+├── infra/                    # 开发用 Compose、SeaTunnel 镜像、初始化 SQL
+├── scripts/e2e/              # 端到端驱动脚本
+├── docs/                     # 架构、需求、设计与接口文档
+└── var/                      # 运行期产物（不进版本库）
 ```
 
-## 环境准备（uv）
+## 环境要求
 
-前置：Python 3.12、[uv](https://docs.astral.sh/uv/)。
+- Python 3.12
+- [uv](https://docs.astral.sh/uv/)
+- Node.js 20+（仅前端开发需要）
+- Docker / Docker Compose（本地 PostgreSQL、Redis；跑真实执行链路还需要 MySQL、Doris、SeaTunnel）
+
+## 安装
 
 ```bash
-# 1. 创建虚拟环境并安装依赖（生成 .venv 与 uv.lock）
+git clone https://github.com/ciwuzhi1/etl_agent_demo.git
+cd etl_agent_demo
 uv sync
-
-# 2.（可选）验证工具链
-uv run ruff check .
-uv run mypy
-uv run pytest -q
-
-# 3. 复制环境变量样例
-cp .env.example .env
 ```
 
-> 中国大陆网络下，可先为 uv 配置国内 PyPI 镜像：
-> `export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple`
-> 若 `uv sync` 卡在可选的 `seatunnel-cli` git 依赖，可暂时移除 `pyproject.toml` 中的
-> `[project.optional-dependencies].seatunnel` 与 `[tool.uv.sources]` 后再同步。
+中国大陆网络下可先配置国内镜像：
 
-## 数据库职责
+```bash
+export UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+```
 
-| 数据库 | 角色 | 说明 |
-|---|---|---|
-| PostgreSQL 17 | 控制面业务库 | 项目 / 版本 / 审批 / 执行 / 证据等全部企业事实，应用唯一存储 |
-| PostgreSQL（独立库） | LangGraph Checkpoint | 图状态与中断恢复，与业务库分库分账号 |
-| Redis 8 | 消息与缓存 | Celery broker/backend + 网关 Nonce 一次性消费 |
-| MySQL 8.4 | 受管数据源（Source） | 被探查 / 被同步的数据，**不是**应用存储 |
-| Apache Doris | 受管数据汇（Sink） | 目标库；影子表 + `REPLACE ... swap` 原子发布、回滚 |
+前端依赖：
 
-详见 `docs/prd.md` 与 `docs/spec.md`。
+```bash
+cd frontend && npm install
+```
 
-## 文档地图（本仓库的工作文档）
+## 配置
 
-| 文件 | 作用 | 什么时候更新 |
-|---|---|---|
-| `docs/prd.md`、`docs/spec.md` | 从课件提炼的需求与任务清单（终态口径，不随章节进度改） | 只在发现与参考实现冲突时修订 |
-| `docs/第1章-待完成计划表.md` | 第 1 章范围 + 本机基础设施缺口 + **DEV-1～DEV-4 偏差台账**与 FIX-1 安全修复记录 | 偏差被后续章节收敛时回填状态列 |
-| `docs/第2章-任务表.md` … `docs/第5章-任务表.md` | 每章一份：任务表（含大白话）、关键概念、**课件与参考实现错位的坑**、收敛项、验收清单与实测证据 | 开工前定口径，收尾时把 ✅/❌ 写成实测值 |
-| `docs/实现步骤与架构图.md` | 逐步执行顺序 + 6 张递进架构图（图 0 终态 → 图 5 第 4 章链路） | **每章任务全部结束、验收通过后**再更新，避免图比代码超前 |
-| `docs/etl.pen` | 控制台界面原型稿（Pencil 源文件，帧名即页面：`00 登录` 等），随模板分发、后端代码不引用 | 第 15 章做 Web 控制台时作为视觉依据 |
+复制 `.env.example` 为 `.env` 并按需修改。关键项：
 
-读法建议：先看本页「当前实现进度」确认哪些是真的，再看对应章节任务表的 **C 组（坑）** 与 **G/D 组（偏差与收敛）**，最后才看代码。凡任务表标 `本章不要求` 或 `偏差待收敛` 的部分，都不要当成已完成能力。
+| 变量 | 说明 |
+|---|---|
+| `ETL_AGENT_ENVIRONMENT` | 运行环境；生产边界校验依赖它 |
+| `ETL_AGENT_DATABASE_URL` | 业务库连接串（`postgresql+asyncpg://…`） |
+| `ETL_AGENT_CHECKPOINT_DATABASE_URL` | LangGraph Checkpoint 独立库 |
+| `ETL_AGENT_REDIS_URL` | Celery broker / backend |
+| `ETL_AGENT_SECRET_PROVIDER` | `fernet-db` 或 `vault` |
+| `ETL_AGENT_SECRET_MASTER_KEY` | Fernet 主密钥（`fernet-db` 模式必填） |
+| `ETL_AGENT_SEATUNNEL_API_URL` | SeaTunnel Zeta REST 地址 |
+| `ETL_AGENT_GENERATION_BACKEND` | `direct` 或黑盒 CLI 适配器 |
+| `ETL_AGENT_LLM_*` | 生成后端使用的模型配置 |
+| `ETL_AGENT_HARNESS_PRIVATE_KEY` / `ETL_AGENT_HARNESS_PUBLIC_KEYS` | Evidence Ledger 签名密钥 |
+| `ETL_AGENT_AUTH_MODE` | `dev-header`（本地）或可信网关 HMAC + Nonce |
 
+`.env` 已被 `.gitignore` 排除，切勿提交。
+
+## 运行
+
+**基础设施**
+
+```bash
+docker compose -f infra/compose.yaml up -d postgres redis
+```
+
+**数据库迁移**
+
+```bash
+uv run alembic upgrade head
+uv run alembic check        # 应输出 No new upgrade operations detected.
+```
+
+**三个进程**（各开一个终端）
+
+```bash
+uv run uvicorn etl_agent.main:app --host 127.0.0.1 --port 8000
+uv run celery -A etl_agent.worker:celery_app worker --loglevel=INFO --pool=solo
+uv run celery -A etl_agent.worker:celery_app beat --loglevel=INFO
+```
+
+> Windows 下请使用 `--pool=solo`；Linux 下可省略。
+
+**前端控制台**
+
+```bash
+cd frontend && npm run dev        # http://localhost:5173，已配置 /api 与 /health 代理
+```
+
+**真实执行链路**（MySQL → SeaTunnel → Doris）
+
+```bash
+docker compose -f infra/compose.yaml --profile e2e up -d
+uv run python scripts/e2e/pipeline_run.py
+```
+
+**健康检查**
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+## 测试
+
+```bash
+uv run pytest tests                 # 单元测试
+uv run ruff check src tests alembic scripts
+uv run ruff format --check src tests alembic scripts
+uv run mypy                         # strict
+```
+
+端到端脚本见 [`scripts/README.md`](scripts/README.md)。
+
+## API 文档
+
+服务启动后：
+
+- Swagger UI：<http://127.0.0.1:8000/docs>
+- OpenAPI JSON：<http://127.0.0.1:8000/openapi.json>
+
+接口挂在 `ETL_AGENT_API_PREFIX`（默认 `/api/v1`）下，共 60 条路径，覆盖：
+
+| 前缀 | 领域 |
+|---|---|
+| `/health` | 健康检查 |
+| `/api/v1/context`、`/api/v1/projects/*` | 工作区、成员、角色授权 |
+| `/api/v1/connections/*`、`/api/v1/data-profiles/*` | 数据连接、探查 |
+| `/api/v1/projects/{id}/file-assets`、`/api/v1/file-assets/*` | 受管文件资产 |
+| `/api/v1/projects/{id}/agent-runs`、`/api/v1/agent-runs/*` | Agent 生成任务 |
+| `/api/v1/projects/{id}/pipelines`、`/api/v1/pipeline-versions/*` | Pipeline 版本与制品 |
+| `/api/v1/approvals/*` | 版本审批 |
+| `/api/v1/execution-preparations/*`、`/api/v1/execution-runs/*` | 执行准备与执行记录 |
+| `/api/v1/side-effect-preparations/*` | 副作用治理 |
+| `/api/v1/projects/{id}/safety-proposals`、`/api/v1/benchmark-runs/*` | 安全进化与基准 |
+| `/api/v1/projects/{id}/overview`、`/api/v1/workers` | 控制台聚合视图 |
+
+本地开发使用 `dev-header` 身份模式，请求头 `X-Actor-Id` 直接携带项目成员的 `users.id`；
+生产环境身份来自可信网关（HMAC + Nonce），不接受请求方自述身份。
+
+## 部署
+
+1. 准备 PostgreSQL 17、Redis、SeaTunnel Zeta，以及受管的 MySQL / Doris
+2. `ETL_AGENT_ENVIRONMENT=production`，关闭 `ETL_AGENT_BOOTSTRAP_ENABLED`
+3. 配齐凭据：`ETL_AGENT_SECRET_MASTER_KEY`（或 Vault 连接）、Harness 签名密钥、网关 HMAC 密钥
+4. `uv run alembic upgrade head`
+5. 各进程按需水平扩展 —— API 与 Worker 无状态，共享同一业务库；Beat 必须单实例
+6. 前端 `npm run build`，用任意静态服务器托管 `frontend/dist`，并把 `/api` 反向代理到 API 进程
+
+## License
+
+本仓库尚未附授权文件（无 `LICENSE`）。未声明许可证时默认保留全部权利，
+如需开源请补充许可证文件并在此说明。
+
+## 已知边界
+
+- SeaTunnel CLI 黑盒生成后端未实现，默认走 `direct`
+- LangGraph Checkpoint 的 PostgreSQL 后端为占位实现：依赖未安装时抛 `NotImplementedError`，调用方降级到内存 Checkpoint
+- 运行时依赖 `harness_side_effect_preparations` 等表已就位，但生产环境的 Ed25519 密钥轮换与 Doris 原子发布尚未在真实环境验证

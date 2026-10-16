@@ -1,6 +1,6 @@
 """执行指标归一化：将 SeaTunnel 引擎原始指标转换为平台统一结构。
 
-本章课件要求实现：
+对外提供：
 - TableMetrics: 单表级别的输入/输出行数与字节数
 - ExecutionMetrics: 整个执行任务的聚合指标及分表明细
 - normalize_seatunnel_metrics: 从 SeaTunnel 响应中提取并归一化指标

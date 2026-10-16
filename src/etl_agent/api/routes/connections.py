@@ -24,7 +24,7 @@ from etl_agent.infrastructure.secret_factory import create_secret_provider
 
 router = APIRouter(tags=["connections"])
 # 凭据轮换策略端点（PUT /connections/{id}/credential-rotation-policy）依赖
-# application/credential_expiry.py，该服务在课件里没有对应章节正文，本章不实现；
+# application/credential_expiry.py，该服务尚未实现，因此端点暂不暴露；
 # data_connections 上的凭据年龄列已建好并保持默认值，端点接入后无需再改表结构。
 
 
@@ -116,7 +116,7 @@ async def test_connection(
 ) -> DataConnectionResponse:
     """将连接标记为测试中并投递连通性任务，API 不阻塞等待外部数据库。
 
-    语义是"已受理，结果轮询 ``GET /connections/{id}``"，因此与同章节的
+    语义是"已受理，结果轮询 ``GET /connections/{id}``"，因此与
     ``/profiles``、``/file-assets`` 一样返回 202，而不是把已受理错报成 200 完成。
     """
     service = ConnectionService(create_secret_provider())

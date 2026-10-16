@@ -1,7 +1,7 @@
 """本地受管文件存储：原子写入 + 流式 SHA-256 + 目录穿越防护。
 
-课件 §5.4.2（第 5 章）要求上传用临时文件+原子替换、读时校验 file-asset:// 协议和目录穿越。
-参考实现 124 行，`_resolve()` 用 `is_relative_to` 挡 `..`；
+上传用临时文件+原子替换、读时校验 file-asset:// 协议和目录穿越。
+`_resolve()` 用 `is_relative_to` 挡 `..`；
 `file_asset_root=var/file-assets` 已在 `.env:246`。
 """
 

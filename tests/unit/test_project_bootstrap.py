@@ -1,9 +1,9 @@
-"""一次性 Bootstrap 的验收测试。课件 §3.10 场景表第 1–3 条。
+"""一次性 Bootstrap 的验收测试。
 
 一个用例连发三次 POST，覆盖三条边界：
 错 Token → 403、首次正确 → 201、再次调用 → 409。
 
-手法上值得记的三点：
+实现要点：
 - 用 `app.dependency_overrides` 把 `get_session` 换成 fixture 的内存库会话，
   应用才不会去连真实 PostgreSQL；
 - `Settings(_env_file=None, ...)` 关掉读 `.env`，否则换台机器结论就变了；

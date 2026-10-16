@@ -9,7 +9,7 @@ import { useSession } from '@/composables/useSession'
 const router = useRouter()
 const session = useSession()
 
-const email = ref('engineer@atguigu.com')
+const email = ref('engineer@example.com')
 const password = ref('')
 const actorId = ref<string>(session.actors.value[0]?.id ?? '')
 const submitting = ref(false)

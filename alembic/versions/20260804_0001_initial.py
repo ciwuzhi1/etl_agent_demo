@@ -33,8 +33,8 @@ pipeline_status = sa.Enum(
 approval_status = sa.Enum(
     "PENDING", "APPROVED", "REJECTED", name="approvalstatus", native_enum=False
 )
-# 本项目在第 3 章即建立 Harness 职责表（参考实现把它放在 0030），
-# 使 §3.7 的成员服务与职责授予可在本章跑通；第 11 章补迁移时须跳过本表。
+# Harness 职责表在此一并建立，使成员服务与职责授予可用；
+# 后续补迁移时必须跳过本表，避免重复建表。
 harness_role = sa.Enum(
     "DATA_ENGINEER",
     "DATA_APPROVER",

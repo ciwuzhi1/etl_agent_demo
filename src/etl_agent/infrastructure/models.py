@@ -1,14 +1,14 @@
 """ORM 模型：PostgreSQL 业务库里 13 张表的唯一定义处。
 
-课件 §3.4（第 3 章的 10 张）+ §4.5（第 4 章补的 3 张）。
+表分两批引入：先 10 张，后续补充 3 张。
 本文件与 `alembic/versions/` 里的迁移必须一致——`alembic check` 就是用来盯这个漂移的。
 
 各组表的分工：
 - 身份：users / projects / project_memberships / project_role_grants
-- 证据：data_connections / encrypted_secrets / data_profiles（第 4 章元数据链路）
+- 证据：data_connections / encrypted_secrets / data_profiles（元数据链路）
 - 版本与审批：pipelines / pipeline_versions / pipeline_artifacts / approval_requests
 - 运行与审计：execution_runs / audit_events
-- 副作用治理（第 12 章）：harness_side_effect_preparations / _approvals / _capability_grants
+- 副作用治理：harness_side_effect_preparations / _approvals / _capability_grants
 
 贯穿全表的一条纪律：**不覆盖同一行**。需求变了开 V+1，重跑新建 ExecutionRun，
 销毁凭据留墓碑。覆盖 = 毁掉审计证据。
@@ -379,12 +379,12 @@ class ExecutionRun(Base, TimestampMixin):
     failure_category: Mapped[str | None] = mapped_column(String(64))
     failure_stage: Mapped[str | None] = mapped_column(String(32))
     retryable: Mapped[bool | None] = mapped_column(Boolean)
-    # 指标字段（第 10 章启用）
+    # 指标字段
     source_rows: Mapped[int | None] = mapped_column(BigInteger)
     sink_rows: Mapped[int | None] = mapped_column(BigInteger)
     source_bytes: Mapped[int | None] = mapped_column(BigInteger)
     sink_bytes: Mapped[int | None] = mapped_column(BigInteger)
-    # 运行时监督字段（第 13 章启用）：监督层只减权，这里记录最新动作、契约摘要与隔离事实。
+    # 运行时监督字段：监督层只减权，这里记录最新动作、契约摘要与隔离事实。
     supervision_action: Mapped[str | None] = mapped_column(String(32))
     supervision_contract_sha256: Mapped[str | None] = mapped_column(String(64))
     quarantined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -770,7 +770,7 @@ class HarnessCommandOutbox(Base, TimestampMixin):
 
 
 class HarnessSideEffectPreparation(Base, TimestampMixin):
-    """第 12 章：非 Pipeline 副作用的冻结事实、审批门禁与执行状态。
+    """非 Pipeline 副作用的冻结事实、审批门禁与执行状态。
 
     Prepare 写入 WAITING_APPROVAL；PDP DENY 落 DENIED 终态；全部必需职责批准后
     READY；Commit 只推进 status=COMMITTED，外部执行进度由 execution_status 与
@@ -830,7 +830,7 @@ class HarnessSideEffectPreparation(Base, TimestampMixin):
 
 
 class HarnessSideEffectApproval(Base):
-    """第 12 章：具名职责对副作用 Preparation 的批准或驳回决定。
+    """具名职责对副作用 Preparation 的批准或驳回决定。
 
     两个唯一约束共同实现职责分离：同一职责槽只能有一个决定，同一自然人不能
     同时占据多个职责槽。
@@ -862,7 +862,7 @@ class HarnessSideEffectApproval(Base):
 
 
 class HarnessSideEffectCapabilityGrant(Base):
-    """第 12 章：Commit 签发的一次性能力授权；只存令牌摘要，不存原始紧凑令牌。"""
+    """Commit 签发的一次性能力授权；只存令牌摘要，不存原始紧凑令牌。"""
 
     __tablename__ = "harness_side_effect_capability_grants"
     __table_args__ = (
@@ -885,13 +885,13 @@ class HarnessSideEffectCapabilityGrant(Base):
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # 指向 harness_command_outbox.id；Outbox 表由第 11 章引入，本迁移链尚未建表，
+    # 指向 harness_command_outbox.id；Outbox 表属于后续能力，本迁移链尚未建表，
     # 因此这里保持为不带数据库外键的引用列，由应用层保证一致性。
     execution_command_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
 
 
 class SafetyProposal(Base, TimestampMixin):
-    """第 14 章：受控安全进化的改进提案。
+    """受控安全进化的改进提案。
 
     只承载可离线审查的候选正文（不含可执行代码/部署命令/凭据），并通过
     DRAFT→IN_REVIEW→APPROVED/REJECTED→RELEASED 的不可跳跃状态推进。
@@ -929,7 +929,7 @@ class SafetyProposal(Base, TimestampMixin):
 
 
 class SafetyRelease(Base, TimestampMixin):
-    """第 14 章：已批准提案的签名发布候选，沿影子→小流量→推广/回滚推进。
+    """已批准提案的签名发布候选，沿影子→小流量→推广/回滚推进。
 
     每行记录一个阶段的当前细粒度状态、粗阶段、脱敏聚合观察与可选签名清单；
     一旦 P0/P1 回归、误报越线或执行错误命中，即自动转为 ROLLED_BACK 并保留失败原因。
@@ -974,7 +974,7 @@ class SafetyRelease(Base, TimestampMixin):
 
 
 class BenchmarkRun(Base, TimestampMixin):
-    """第 14 章：一次冻结 Benchmark 运行的签名证据记录。
+    """一次冻结 Benchmark 运行的签名证据记录。
 
     报告正文、门槛与逐案例结论整体存入 report；manifest_sha256 把结论绑定到确切
     的场景清单内容，gates_passed 让发布门禁可以直接读取而不必重算。

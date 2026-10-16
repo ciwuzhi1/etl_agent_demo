@@ -1,9 +1,10 @@
-"""第 5 章单元测试：九种格式解析、受管存储原子性、上传 API 响应脱敏。
+"""文件资产单元测试：九种格式解析、受管存储原子性、上传 API 响应脱敏。
 
-参考实现 348 行共 7 个测试；其中 `test_ready_file_asset_enters_agent_as_localfile_source`
-需要 `AgentRunService`（第 8 章）、`credential_bindings_for_artifact`（全文无清单）与
-`WorkerHeartbeat` 模型（无清单，只在参考迁移 0007/0010 建表），本章跑不了。
-故本章只落 6 个测试（4 个解析 + 存储 + 上传 API）。
+当前覆盖 6 个用例：4 个格式解析（表格/文档、XLSX+PDF 能力边界、列式格式、行数门禁），
+1 个受管存储原子性，1 个上传 API 的排队与脱敏响应。
+
+`test_ready_file_asset_enters_agent_as_localfile_source` 尚未落地：它依赖尚未接入本仓库的
+`AgentRunService`、`credential_bindings_for_artifact` 与 `WorkerHeartbeat` 模型。
 """
 
 import io
