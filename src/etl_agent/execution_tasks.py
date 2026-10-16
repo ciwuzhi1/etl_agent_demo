@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from etl_agent.application.execution import ExecutionService
 from etl_agent.application.execution_credentials import materialize_execution_placeholders
 from etl_agent.application.execution_diagnostics import diagnose_execution_failure
+from etl_agent.application.execution_metrics import normalize_seatunnel_metrics
 from etl_agent.asyncio_compat import run_async
 from etl_agent.config import get_settings
 from etl_agent.domain.enums import ExecutionStatus
@@ -277,15 +278,25 @@ async def _monitor_execution(run_id: uuid.UUID) -> dict[str, object]:
         return {"run_id": str(run_id), "status": "ENGINE_UNAVAILABLE"}
 
     engine_status = info.status.strip().upper()
-    await _advance_from_engine_status(run_id, engine_status)
+    await _advance_from_engine_status(run_id, engine_status, info.metrics)
     # 尚未到终态就续投下一条，形成自续轮询直到引擎收敛。
     if engine_status not in _ENGINE_TERMINAL_STATUSES:
         await _enqueue_monitor(run_id, delay_seconds=_MONITOR_POLL_SECONDS)
     return {"run_id": str(run_id), "engine_status": engine_status}
 
 
-async def _advance_from_engine_status(run_id: uuid.UUID, engine_status: str) -> None:
-    """按引擎状态推进 Run；非法转换静默跳过（幂等的轮询不应互相打架）。"""
+async def _advance_from_engine_status(
+    run_id: uuid.UUID,
+    engine_status: str,
+    raw_metrics: dict[str, object] | None = None,
+) -> None:
+    """按引擎状态推进 Run；非法转换静默跳过（幂等的轮询不应互相打架）。
+
+    成功终态的行/字节指标取自引擎 ``/job-info`` 的 ``metrics``，经
+    ``normalize_seatunnel_metrics`` 归一化后落库——引擎已经把真实计数返给我们，
+    不取就是白白丢数据（Run 上会永远显示 0 行）。字段缺失时归一化结果为 0，
+    保持"不虚构指标"的底线。
+    """
     service = ExecutionService()
     async with SessionFactory() as session:
         async with session.begin():
@@ -293,8 +304,15 @@ async def _advance_from_engine_status(run_id: uuid.UUID, engine_status: str) -> 
                 if engine_status in {"RUNNING", "CREATED", "SCHEDULED", "RESTARTING"}:
                     await service.mark_running(session, run_id)
                 elif engine_status in {"FINISHED", "SUCCEEDED", "SUCCESS"}:
-                    # 引擎 JobInfo 未提供行/字节指标，这里写 0 占位，避免虚构指标。
-                    await service.mark_succeeded(session, run_id, 0, 0, 0, 0)
+                    metrics = normalize_seatunnel_metrics(raw_metrics or {})
+                    await service.mark_succeeded(
+                        session,
+                        run_id,
+                        metrics.source_rows,
+                        metrics.sink_rows,
+                        metrics.source_bytes,
+                        metrics.sink_bytes,
+                    )
                 elif engine_status in {"FAILED", "CANCELED", "CANCELLED"}:
                     await service.mark_failed(
                         session,

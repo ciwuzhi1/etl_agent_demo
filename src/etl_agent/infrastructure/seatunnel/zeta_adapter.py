@@ -3,7 +3,7 @@
 from typing import Any, Protocol, runtime_checkable
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from etl_agent.domain.errors import DomainError
 
@@ -21,6 +21,9 @@ class SeatunnelJobInfo(BaseModel):
     job_id: str
     status: str
     create_time: str | None = None
+    # 引擎原始指标（SourceReceivedCount / SinkCommittedCount 等）。
+    # 归一化交给 application/execution_metrics，本层只原样透传，不做解释。
+    metrics: dict[str, Any] = Field(default_factory=dict)
 
 
 @runtime_checkable
@@ -149,11 +152,13 @@ class ZetaRestAdapter(SeatunnelExecutionPort):
                 raise SeaTunnelApiError(f"SeaTunnel job {job_id} has no status")
 
             create_time = payload.get("createTime")
+            metrics = payload.get("metrics")
 
             return SeatunnelJobInfo(
                 job_id=str(payload["jobId"]),
                 status=str(status),
                 create_time=str(create_time) if create_time else None,
+                metrics=metrics if isinstance(metrics, dict) else {},
             )
 
         except httpx.ConnectError as exc:
