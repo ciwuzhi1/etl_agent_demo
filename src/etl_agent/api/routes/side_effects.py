@@ -26,6 +26,7 @@ from etl_agent.api.schemas import (
     SideEffectCommitResponse,
     SideEffectPreparationResponse,
 )
+from etl_agent.application.harness_factory import build_evidence_ledger
 from etl_agent.application.harness_policy import EmbeddedPolicyDecisionPoint
 from etl_agent.application.side_effect_harness import (
     SideEffectHarnessService,
@@ -59,6 +60,8 @@ def get_side_effect_harness_service() -> SideEffectHarnessService:
         policy_bundle_version=settings.harness_policy_bundle_version,
         preparation_ttl_seconds=settings.harness_preparation_ttl_seconds,
         capability_ttl_seconds=settings.harness_capability_ttl_seconds,
+        # 副作用证据与能力令牌共用同一把 Ed25519 身份，校验方只需一份公钥。
+        ledger=build_evidence_ledger(),
     )
 
 

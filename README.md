@@ -29,16 +29,16 @@ etl_agent 是面向企业 ETL 任务的智能**控制面**：理解自然语言�
 | 第 8 章 | LangGraph 六节点状态机、AgentRunService、credential_materialization | `uv run pytest tests` |
 | 第 9 章 | PipelineService 版本冻结 + SHA-256 artifact_digest、ApprovalService 四眼审批、`agent_runs/pipelines/approvals` API 路由 | `uv run pytest tests` |
 | 第 10 章 | Zeta REST Adapter、ExecutionService、失败诊断、指标归一化、`executions` API 路由 | `uv run pytest tests` |
-| 第 11 章 | Harness 内核：PDP（9 条规则）、ToolBroker、Ed25519 签名、Evidence Ledger 哈希链、Outbox 投递、角色映射 | `uv run pytest tests` |
+| 第 11 章 | Harness 内核：PDP（11 条规则清单，含 baseline-allow）、ToolBroker、Ed25519 签名、Evidence Ledger 哈希链、Outbox 投递、角色映射 | `uv run pytest tests` |
 | 第 12 章 | SideEffectHarnessService（9 种副作用 prepare/decide/commit）、`side_effects` API 路由、迁移 0009（3 张表） | `uv run pytest tests/unit/test_side_effects.py`（12 passed） |
 | 第 13 章 | RuntimeSupervisor + 6 条预算规则、RuntimeSupervisionService 快照链、迁移 0010 | `uv run pytest tests/unit/test_runtime_supervision.py`（15 passed） |
 | 第 14 章 | HarnessBenchmarkRunner（可重复性+双人群+门禁）、SafetyEvolutionService（DRAFT→shadow→canary→promote）、CLI、`safety_evolution` API 路由、迁移 0011 | `uv run pytest tests/unit/test_benchmark.py tests/unit/test_safety_evolution.py`（20 passed） |
 | 第 15 章 | 前端五视图完整 + 5 个 services 切换到真实后端 API（`connections/execution/governance/overview/studio`）+ Vite `/health` 代理 | `frontend/src/services/*.ts` |
 
-- 迁移链：`20260804_0001 → 0002 → … → 0011`（单 head）；PostgreSQL 业务库 **28 张表**（含 agent_runs / side_effect / supervision / benchmark / safety 等）。
-- 测试：`uv run pytest tests` → **98 passed**（Ch3=14 + Ch4=6 + Ch5=6 + Ch6=17 + Ch7=6 + Ch12=12 + Ch13=15 + Ch14=20 + Ch1-9 其他 2）；`tests/simulation/` 目录是模板留下的空壳，L1/L2 场景待专门章节。
-- 静态检查：`ruff check` 与 `ruff format --check` 全绿，`mypy`（strict）在 76 个源文件上无问题。
-- API 端点：`main.py` 注册 9 个路由（health/projects/connections/file_assets/agent_runs/pipelines/approvals/executions/side_effects/safety_evolution），完整覆盖 1-15 章。
+- 迁移链：`20260804_0001 → 0002 → … → 0012`（单 head，13 个迁移文件）；PostgreSQL 业务库 **30 张表**（含 agent_runs / side_effect / supervision / benchmark / safety / worker_heartbeats 等）。
+- 测试：`uv run pytest tests` → **135 passed**（16 个测试文件；`tests/simulation/` 仍是模板留下的空壳，L1/L2 场景待专门章节）。
+- 静态检查：`ruff check` 与 `ruff format --check` 全绿，`mypy`（strict）在 86 个源文件上无问题。
+- API 端点：`main.py` 注册 14 个路由（health/projects/connections/file_assets/agent_runs/pipelines/approvals/executions/side_effects/safety_evolution/console/execution_preparations/studio），OpenAPI 暴露 59 条路径，完整覆盖 1-15 章。
 
 **已知限制（诚实标注）**：
 - 第 10 章 SeaTunnel 真实提交/监控 Celery 任务与 e2e Profile 联调待启用；`zeta_adapter.py` 已具备但需真实引擎。

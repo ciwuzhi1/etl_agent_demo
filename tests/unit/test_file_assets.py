@@ -186,6 +186,53 @@ async def test_local_store_is_atomic_bounded_and_path_safe(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
+async def test_failed_upload_leaves_no_empty_asset_directory(tmp_path: Path) -> None:
+    """校验失败的上传必须回收本次新建的资产目录，不留空壳。
+
+    临时文件与目标同目录才能原子替换，所以目录在校验之前就建好了；失败时若只删
+    临时文件，受管目录里就会积累空目录，让"哪些资产真的落过盘"不再可信。
+    """
+    store = LocalFileAssetStore(tmp_path)
+
+    async def empty() -> AsyncIterator[bytes]:
+        """不产出任何数据块，模拟空文件上传。"""
+        for chunk in ():
+            yield chunk
+
+    with pytest.raises(DomainError, match="空文件"):
+        await store.write_upload("asset-empty/source.csv", empty(), max_bytes=1024)
+    assert not (tmp_path / "asset-empty").exists()
+
+    async def oversized() -> AsyncIterator[bytes]:
+        """提供超过限制的上传块，模拟超限失败。"""
+        yield b"0123456789"
+
+    with pytest.raises(DomainError, match="上限"):
+        await store.write_upload("asset-large/source.csv", oversized(), max_bytes=5)
+    assert not (tmp_path / "asset-large").exists()
+
+
+@pytest.mark.asyncio
+async def test_failed_upload_keeps_directory_that_already_held_assets(tmp_path: Path) -> None:
+    """目录里已有内容时，失败清理只回收空目录，绝不牵连既有资产。"""
+    store = LocalFileAssetStore(tmp_path)
+
+    async def kept() -> AsyncIterator[bytes]:
+        """写入一份应当被保留的资产。"""
+        yield b"kept"
+
+    await store.write_upload("asset-shared/source.csv", kept(), max_bytes=1024)
+
+    async def oversized() -> AsyncIterator[bytes]:
+        """提供超过限制的上传块，模拟同目录下的后续失败。"""
+        yield b"0123456789"
+
+    with pytest.raises(DomainError, match="上限"):
+        await store.write_upload("asset-shared/normalized.jsonl", oversized(), max_bytes=5)
+    assert (tmp_path / "asset-shared" / "source.csv").read_bytes() == b"kept"
+
+
+@pytest.mark.asyncio
 async def test_file_upload_api_is_streamed_queued_and_redacted(
     session: AsyncSession,
     tmp_path: Path,

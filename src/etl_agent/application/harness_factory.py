@@ -26,8 +26,22 @@ from etl_agent.infrastructure.harness_signing import CapabilityTokenIssuer, Ed25
 _PRIVATE_KEY_BYTES = 32
 
 
+def build_evidence_ledger() -> EvidenceLedgerService:
+    """按配置装配带签名的证据账本，供所有 Harness 链路复用同一签发身份。
+
+    私钥解析规则与能力令牌签发完全一致（见 ``_resolve_signer``），因此校验方
+    只要持有 ``harness_public_keys`` 里那一份公钥，就能同时验能力令牌与验证据事件。
+    任何一步拿不到合法 32 字节材料都会失败关闭，不会退化成"证据不带签名"的弱模式。
+    """
+    settings = get_settings()
+    return EvidenceLedgerService(
+        signer=_resolve_signer(settings),
+        key_id=settings.harness_signing_key_id,
+    )
+
+
 def build_execution_harness() -> ExecutionHarnessService:
-    """按配置装配执行 Harness：内嵌 PDP + 一次性能力签发器。
+    """按配置装配执行 Harness：内嵌 PDP + 一次性能力签发器 + 签名证据账本。
 
     Returns:
         可直接注入路由的 ``ExecutionHarnessService``；每次调用重新读取配置，

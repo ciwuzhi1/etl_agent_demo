@@ -1,10 +1,13 @@
 import uuid
+from collections.abc import AsyncIterator
 
 import pytest
 from cryptography.fernet import Fernet
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from etl_agent.api.routes import connections as connection_routes
 from etl_agent.application.connections import ConnectionService
 from etl_agent.application.profiling import (
     ConnectionTarget,
@@ -17,6 +20,7 @@ from etl_agent.application.secrets import (
 )
 from etl_agent.domain.enums import ConnectionStatus, ConnectorType, DataProfileStatus, ProjectRole
 from etl_agent.domain.errors import DomainError
+from etl_agent.infrastructure.database import get_session
 from etl_agent.infrastructure.models import (
     AuditEvent,
     EncryptedSecret,
@@ -24,6 +28,7 @@ from etl_agent.infrastructure.models import (
     ProjectMembership,
     User,
 )
+from etl_agent.main import app
 
 
 async def seed_engineer(session: AsyncSession) -> tuple[Project, User]:
@@ -146,6 +151,56 @@ async def test_profile_persists_only_masked_result(session: AsyncSession) -> Non
     assert profile.status is DataProfileStatus.READY
     assert profile.masked_sample == [{"id": 1, "phone": "138****8000"}]
     assert profile.expires_at is not None
+
+
+@pytest.mark.asyncio
+async def test_connection_test_endpoint_is_accepted_not_completed(
+    session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """连通测试是"已受理、结果轮询"，必须返回 202 而不是把已受理错报成 200 完成。
+
+    契约来自 ``docs/spec.md`` API-02（异步测试与探查 202）；同章节的 ``/profiles``
+    与 ``/file-assets`` 也都是 202，这条端点此前是唯一的例外。
+    """
+    project, engineer = await seed_engineer(session)
+    connection = await ConnectionService(
+        FernetDatabaseSecretProvider(Fernet.generate_key().decode())
+    ).create(
+        session,
+        project_id=project.id,
+        actor_id=engineer.id,
+        name="probe-target",
+        connector_type=ConnectorType.MYSQL,
+        host="mysql.internal",
+        port=3306,
+        database_name="sales",
+        options={},
+        credentials=ConnectionCredentials(username="user", password="secret"),
+    )
+    await session.commit()
+
+    dispatched: list[str] = []
+
+    async def override_session() -> AsyncIterator[AsyncSession]:
+        """让 ASGI 请求复用当前 SQLite 会话。"""
+        yield session
+
+    # 只替换 Celery 投递，断言"已受理"而不依赖真实 broker。
+    monkeypatch.setattr(connection_routes.test_data_connection, "delay", dispatched.append)
+    app.dependency_overrides[get_session] = override_session
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                f"/api/v1/connections/{connection.id}/tests",
+                headers={"X-Actor-ID": str(engineer.id)},
+            )
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+
+    assert response.status_code == 202
+    assert response.json()["status"] == ConnectionStatus.TESTING.value
+    assert dispatched == [str(connection.id)]
 
 
 def test_error_redaction_removes_password() -> None:

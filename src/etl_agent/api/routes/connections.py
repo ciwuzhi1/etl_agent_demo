@@ -104,13 +104,21 @@ async def get_connection(
     return DataConnectionResponse.model_validate(connection)
 
 
-@router.post("/connections/{connection_id}/tests", response_model=DataConnectionResponse)
+@router.post(
+    "/connections/{connection_id}/tests",
+    response_model=DataConnectionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def test_connection(
     connection_id: uuid.UUID,
     actor: uuid.UUID = Depends(actor_id),
     session: AsyncSession = Depends(get_session),
 ) -> DataConnectionResponse:
-    """将连接标记为测试中并投递连通性任务，API 不阻塞等待外部数据库。"""
+    """将连接标记为测试中并投递连通性任务，API 不阻塞等待外部数据库。
+
+    语义是"已受理，结果轮询 ``GET /connections/{id}``"，因此与同章节的
+    ``/profiles``、``/file-assets`` 一样返回 202，而不是把已受理错报成 200 完成。
+    """
     service = ConnectionService(create_secret_provider())
     async with session.begin():
         connection = await service.mark_testing(

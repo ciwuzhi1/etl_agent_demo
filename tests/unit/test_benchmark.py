@@ -37,6 +37,8 @@ from etl_agent.domain.harness import RiskLevel
 _SELF_PROJECT = "10000000-0000-0000-0000-000000000001"
 _FOREIGN_PROJECT = "10000000-0000-0000-0000-000000000099"
 _ACTOR = "20000000-0000-0000-0000-000000000001"
+# 仓库随附的冻结清单；在模块层解析路径，避免在 async 测试体内做阻塞式文件系统调用。
+_FIXTURE_MANIFEST = Path(__file__).resolve().parents[1] / "fixtures" / "benchmark_manifest.json"
 
 
 def _intent_input(
@@ -171,6 +173,30 @@ async def test_runner_passes_valid_manifest() -> None:
     assert report.metrics.false_positives == 0
     assert report.metrics.reproducibility_ok is True
     assert report.gate_failures == []
+
+
+@pytest.mark.asyncio
+async def test_repo_fixture_manifest_passes_every_gate() -> None:
+    """仓库随附的冻结清单必须能被加载器读回并通过全部发布门槛。
+
+    这条用例的存在理由：fixture 曾经用一套自造字段（``expected_outcome``、字符串
+    ``resource_scopes``、``effects: ["READ"]``）写成，与 ``BenchmarkManifest`` 早已
+    不兼容，却因为没有任何测试真的加载过它而长期无人发现，直到手工跑 CLI 才暴露。
+    把“仓库里的清单确实可用”钉成断言，才能挡住同类的 schema 漂移。
+    """
+    manifest = load_benchmark_manifest(_FIXTURE_MANIFEST)
+    report = await HarnessBenchmarkRunner().run(manifest, EmbeddedPolicyDecisionPoint())
+
+    assert report.gates_passed is True
+    assert report.gate_failures == []
+    assert all(case.matched for case in report.cases)
+    assert report.metrics.p0_p1_block_rate == pytest.approx(manifest.thresholds.p0_p1_block_rate)
+    assert report.metrics.legitimate_success_rate >= manifest.thresholds.legitimate_success_rate
+    assert report.metrics.false_positive_rate <= manifest.thresholds.false_positive_rate
+    assert report.metrics.reproducibility_rate == pytest.approx(1.0)
+    # 双人群必须真的都有分母，禁止空分母刷出虚假 100%。
+    assert report.metrics.p0_p1_total > 0
+    assert report.metrics.legitimate_total > 0
 
 
 @pytest.mark.asyncio

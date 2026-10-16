@@ -189,6 +189,15 @@ export const studioService = {
     return toAgentRun(dto)
   },
 
+  /** 提交澄清回答：把 WAITING_INPUT 的 run 重新排队，图会带着追问与回答继续跑。 */
+  async answerAgentRun(runId: string, answer: string): Promise<AgentRun> {
+    const dto = await apiRequest<AgentRunDTO>(`/agent-runs/${runId}/answers`, {
+      method: 'POST',
+      body: JSON.stringify({ answer }),
+    })
+    return toAgentRun(dto)
+  },
+
   /** 查询 AgentRun 状态；未指定 id 时取最近一次。 */
   async getAgentRun(runId?: string): Promise<AgentRun> {
     if (runId) {

@@ -191,7 +191,7 @@ class ScheduleMode(StrEnum):
 
 
 class ScheduleMisfirePolicy(StrEnum):
-    """错过触发时刻怎么办：跳过这一轮，还是补跑一次（第 11 章之后）。"""
+    """错过触发时刻怎么办：跳过这一轮，还是补跑一次（第 11 章之后）"""
 
     SKIP = "SKIP"
     FIRE_ONCE = "FIRE_ONCE"

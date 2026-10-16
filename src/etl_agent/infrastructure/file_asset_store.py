@@ -42,8 +42,14 @@ class LocalFileAssetStore:
         *,
         max_bytes: int,
     ) -> StoredFile:
-        """流式写入上传内容并计算 SHA-256，超限或异常时删除临时文件。"""
+        """流式写入上传内容并计算 SHA-256，超限或异常时删除临时文件。
+
+        临时文件必须与目标同目录才能做原子替换，所以资产目录在校验内容之前就建好了。
+        一旦校验失败（空文件、超限），只删临时文件会在受管目录里留下空壳，让
+        "哪些资产真的落过盘"变得不可信；因此失败时还要回收本次新建的空目录。
+        """
         destination = self._resolve(relative_path)
+        parent_existed = destination.parent.is_dir()
         await asyncio.to_thread(destination.parent.mkdir, parents=True, exist_ok=True)
         temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.uploading")
         digest = hashlib.sha256()
@@ -67,6 +73,8 @@ class LocalFileAssetStore:
             await asyncio.to_thread(temporary.replace, destination)
         except Exception:
             await asyncio.to_thread(temporary.unlink, missing_ok=True)
+            if not parent_existed:
+                await asyncio.to_thread(_remove_empty_directory, destination.parent)
             raise
         return StoredFile(
             uri=self.scheme + PurePosixPath(relative_path).as_posix(),
@@ -86,6 +94,7 @@ class LocalFileAssetStore:
     ) -> StoredFile:
         """把规范化行原子写成 UTF-8 JSONL，供 SeaTunnel LocalFile 只读消费。"""
         destination = self._resolve(relative_path)
+        parent_existed = destination.parent.is_dir()
         await asyncio.to_thread(destination.parent.mkdir, parents=True, exist_ok=True)
         temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.normalizing")
 
@@ -105,6 +114,8 @@ class LocalFileAssetStore:
                 temporary.replace(destination)
             except Exception:
                 temporary.unlink(missing_ok=True)
+                if not parent_existed:
+                    _remove_empty_directory(destination.parent)
                 raise
             return StoredFile(
                 uri=self.scheme + PurePosixPath(relative_path).as_posix(),
@@ -129,3 +140,15 @@ class LocalFileAssetStore:
         if not path.is_relative_to(self._root):
             raise ResourceNotFound("文件资产路径越界")
         return path
+
+
+def _remove_empty_directory(path: Path) -> None:
+    """尽力回收一个空目录；非空或已被并发删除时静默跳过。
+
+    只用 ``rmdir``（不递归），所以目录里一旦有并发上传写入的内容就必然失败并保留，
+    不存在误删他人数据的可能。这两种失败都是本函数的正常语义，不是被吞掉的错误。
+    """
+    try:
+        path.rmdir()
+    except OSError:
+        return

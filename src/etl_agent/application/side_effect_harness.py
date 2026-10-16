@@ -21,6 +21,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -752,6 +753,8 @@ async def complete_side_effect(
     session: AsyncSession,
     command_id: str,
     result: dict[str, Any],
+    *,
+    ledger: EvidenceLedgerService | None = None,
 ) -> None:
     """标记副作用执行成功；结果只落 SHA-256 摘要，重复回执幂等。"""
     preparation, _ = await _lock_for_command(session, command_id)
@@ -764,7 +767,7 @@ async def complete_side_effect(
     preparation.execution_error = None
     preparation.lease_owner = None
     preparation.lease_expires_at = None
-    await EvidenceLedgerService().append(
+    await (ledger or _default_evidence_ledger()).append(
         session,
         project_id=preparation.project_id,
         stream_type="side-effect-preparation",
@@ -785,6 +788,8 @@ async def fail_side_effect(
     session: AsyncSession,
     command_id: str,
     error: str,
+    *,
+    ledger: EvidenceLedgerService | None = None,
 ) -> None:
     """标记副作用最终失败；只保存脱敏错误摘要，保留授权供审计与人工重试。"""
     preparation, outbox = await _lock_for_command(session, command_id)
@@ -798,7 +803,7 @@ async def fail_side_effect(
     preparation.lease_owner = None
     preparation.lease_expires_at = None
     outbox.last_error = safe_error
-    await EvidenceLedgerService().append(
+    await (ledger or _default_evidence_ledger()).append(
         session,
         project_id=preparation.project_id,
         stream_type="side-effect-preparation",
@@ -813,6 +818,19 @@ async def fail_side_effect(
         risk_level=preparation.risk_level,
     )
     await session.flush()
+
+
+@lru_cache
+def _default_evidence_ledger() -> EvidenceLedgerService:
+    """进程内共享的签名证据账本，供模块级终态函数落到与能力令牌同源的签名。
+
+    这两个终态函数由 Celery 任务与测试直接调用，拿不到 ``SideEffectHarnessService``
+    实例上的 ``self._ledger``；此前它们各自内联 ``EvidenceLedgerService()``，结果
+    副作用链路的证据长期是无签名的。改为统一从这里取签名账本。
+    """
+    from etl_agent.application.harness_factory import build_evidence_ledger
+
+    return build_evidence_ledger()
 
 
 async def _lock_for_command(

@@ -1,21 +1,41 @@
 <script setup lang="ts">
-import { FlaskConical, Rocket, ShieldCheck, TrendingDown, TrendingUp } from 'lucide-vue-next'
-import { onMounted } from 'vue'
+import {
+  FlaskConical,
+  Rocket,
+  ShieldAlert,
+  ShieldCheck,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-vue-next'
+import { NButton, useMessage } from 'naive-ui'
+import { computed, onMounted, ref } from 'vue'
 
 import EmptyState from '@/components/ui/EmptyState.vue'
 import ErrorState from '@/components/ui/ErrorState.vue'
 import LoadingState from '@/components/ui/LoadingState.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Panel from '@/components/ui/Panel.vue'
+import RiskBadge from '@/components/ui/RiskBadge.vue'
 import StatusTag from '@/components/ui/StatusTag.vue'
 import { useAsyncState } from '@/composables/useAsyncState'
+import { useSession } from '@/composables/useSession'
 import { governanceService } from '@/services/governance'
-import type { ReleaseStage } from '@/types/models'
+import { describeApiError } from '@/services/http'
+import { sideEffectService } from '@/services/sideEffects'
+import type {
+  HarnessRole,
+  ReleaseStage,
+  SideEffectPreparation,
+} from '@/types/models'
+
+const message = useMessage()
+const session = useSession()
 
 const benchmarkState = useAsyncState(() => governanceService.getBenchmark())
 const casesState = useAsyncState(() => governanceService.listBenchmarkCases())
 const proposalsState = useAsyncState(() => governanceService.listProposals())
 const releasesState = useAsyncState(() => governanceService.listReleases())
+const sideEffectsState = useAsyncState(() => sideEffectService.list())
 
 const STAGE_LABEL: Record<ReleaseStage, string> = {
   SHADOW: '影子验证',
@@ -24,8 +44,97 @@ const STAGE_LABEL: Record<ReleaseStage, string> = {
   ROLLED_BACK: '已回滚',
 }
 
+const actingId = ref<string | null>(null)
+const committingId = ref<string | null>(null)
+
+const OPERATION_LABEL: Record<string, string> = {
+  CANCEL_EXECUTION: '取消执行',
+  ROLLBACK_DORIS: 'Doris 回滚',
+  CLEANUP_DORIS: 'Doris 清理',
+  MIGRATE_SECRET: 'Secret 迁移',
+  STAGE_SECRET_ROTATION: 'Secret 暂存轮换',
+  VALIDATE_SECRET_ROTATION: 'Secret 轮换验证',
+  ACTIVATE_SECRET_ROTATION: 'Secret 轮换激活',
+  ROLLBACK_SECRET_ROTATION: 'Secret 轮换回退',
+  DESTROY_SECRET: 'Secret 销毁',
+}
+
 function formatValue(value: number, unit: string): string {
   return unit === '%' ? `${value}%` : unit === 'ms' ? `${value}ms` : `${value}`
+}
+
+/** 当前身份在该准备单要求的职责里实际持有的那一个；一个都不持有则为 null。 */
+function heldRequiredRole(preparation: SideEffectPreparation): HarnessRole | null {
+  return preparation.requiredRoles.find((role) => session.hasHarnessRole(role)) ?? null
+}
+
+/** 申请人不能自批；只有等待审批的准备单能占槽。 */
+function canDecide(preparation: SideEffectPreparation): boolean {
+  return (
+    preparation.status === 'WAITING_APPROVAL' &&
+    preparation.requestedBy !== session.currentActor.value?.id &&
+    heldRequiredRole(preparation) !== null
+  )
+}
+
+function decideBlockedReason(preparation: SideEffectPreparation): string | undefined {
+  if (preparation.status !== 'WAITING_APPROVAL') {
+    return `准备单已处于 ${preparation.status}，无需审批`
+  }
+  if (preparation.requestedBy === session.currentActor.value?.id) {
+    return '四眼分离：申请人不能审批自己发起的副作用'
+  }
+  if (heldRequiredRole(preparation) === null) {
+    const roles = preparation.requiredRoles.join('、') || '审批人'
+    return `当前身份缺少所需职责（${roles}），请切换身份后审批`
+  }
+  return undefined
+}
+
+/** 只有审批齐备（READY）且调用者持有 OPERATOR 时才能提交。 */
+const commitBlocked = computed(() => !session.hasHarnessRole('OPERATOR'))
+
+async function handleDecide(
+  preparation: SideEffectPreparation,
+  decision: 'APPROVE' | 'REJECT',
+): Promise<void> {
+  const role = heldRequiredRole(preparation)
+  if (!role) {
+    message.warning(decideBlockedReason(preparation) ?? '当前身份无法审批该准备单')
+    return
+  }
+  actingId.value = preparation.id
+  try {
+    await sideEffectService.decide(
+      preparation.id,
+      role,
+      decision,
+      decision === 'APPROVE' ? '控制台审批通过' : '控制台驳回',
+    )
+    await sideEffectsState.run()
+    message.success(decision === 'APPROVE' ? `已占用审批槽（${role}）` : '已驳回该副作用')
+  } catch (caught) {
+    message.error(describeApiError(caught))
+  } finally {
+    actingId.value = null
+  }
+}
+
+async function handleCommit(preparation: SideEffectPreparation): Promise<void> {
+  if (commitBlocked.value) {
+    message.warning('当前身份缺少 OPERATOR 职责，无法提交副作用')
+    return
+  }
+  committingId.value = preparation.id
+  try {
+    const result = await sideEffectService.commit(preparation.id)
+    message.success(`已签发一次性能力并投递命令 ${result.executionId.slice(0, 8)}，由 Worker 执行`)
+    await sideEffectsState.run()
+  } catch (caught) {
+    message.error(describeApiError(caught))
+  } finally {
+    committingId.value = null
+  }
 }
 
 onMounted(() => {
@@ -33,6 +142,7 @@ onMounted(() => {
   void casesState.run()
   void proposalsState.run()
   void releasesState.run()
+  void sideEffectsState.run()
 })
 </script>
 
@@ -160,6 +270,135 @@ onMounted(() => {
           </article>
         </div>
         <EmptyState v-else title="暂无签名运行" />
+      </Panel>
+
+      <Panel
+        title="副作用治理"
+        description="9 类副作用共用同一条通道：发起只创建 Preparation，占满全部职责槽并签发一次性能力后才由 Worker 执行。"
+      >
+        <template #actions>
+          <NButton
+            size="tiny"
+            quaternary
+            :loading="sideEffectsState.loading.value"
+            @click="sideEffectsState.run()"
+          >
+            刷新
+          </NButton>
+        </template>
+
+        <LoadingState
+          v-if="sideEffectsState.loading.value && !sideEffectsState.data.value"
+          :rows="2"
+        />
+        <div v-else-if="sideEffectsState.data.value?.length" class="overflow-x-auto">
+          <table class="w-full min-w-[1040px] border-collapse text-left">
+            <thead>
+              <tr class="border-b border-line">
+                <th class="px-3 py-2 font-mono text-[9px] tracking-wider text-muted uppercase">
+                  Preparation
+                </th>
+                <th class="px-3 py-2 font-mono text-[9px] tracking-wider text-muted uppercase">
+                  操作
+                </th>
+                <th class="px-3 py-2 font-mono text-[9px] tracking-wider text-muted uppercase">
+                  风险
+                </th>
+                <th class="px-3 py-2 font-mono text-[9px] tracking-wider text-muted uppercase">
+                  必备职责
+                </th>
+                <th class="px-3 py-2 font-mono text-[9px] tracking-wider text-muted uppercase">
+                  审批 / 状态
+                </th>
+                <th class="px-3 py-2 font-mono text-[9px] tracking-wider text-muted uppercase">
+                  操作
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="preparation in sideEffectsState.data.value"
+                :key="preparation.id"
+                class="border-b border-line/70 last:border-b-0"
+              >
+                <td class="px-3 py-3">
+                  <strong class="block font-mono text-[11px] text-ink">
+                    {{ preparation.id.slice(0, 8) }}
+                  </strong>
+                  <small class="font-mono text-[10px] text-muted">
+                    聚合根 {{ preparation.aggregateId.slice(0, 8) }}
+                  </small>
+                </td>
+                <td class="px-3 py-3 text-[11px] text-ink">
+                  {{ OPERATION_LABEL[preparation.operation] ?? preparation.operation }}
+                </td>
+                <td class="px-3 py-3"><RiskBadge :level="preparation.riskLevel" /></td>
+                <td class="px-3 py-3">
+                  <span
+                    v-for="role in preparation.requiredRoles"
+                    :key="role"
+                    class="mr-1 inline-block rounded bg-ink/5 px-1.5 py-1 font-mono text-[9px] text-muted"
+                  >
+                    {{ role }}
+                  </span>
+                </td>
+                <td class="px-3 py-3">
+                  <StatusTag :status="preparation.status" />
+                  <small class="mt-1 block font-mono text-[9px] text-muted">
+                    需 {{ preparation.requiredApprovals }} 槽 · 执行 {{ preparation.executionStatus }}
+                  </small>
+                </td>
+                <td class="px-3 py-3">
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <NButton
+                      size="tiny"
+                      type="primary"
+                      :disabled="!canDecide(preparation)"
+                      :loading="actingId === preparation.id"
+                      :title="decideBlockedReason(preparation)"
+                      @click="handleDecide(preparation, 'APPROVE')"
+                    >
+                      通过
+                    </NButton>
+                    <NButton
+                      size="tiny"
+                      quaternary
+                      :disabled="!canDecide(preparation)"
+                      :loading="actingId === preparation.id"
+                      :title="decideBlockedReason(preparation)"
+                      @click="handleDecide(preparation, 'REJECT')"
+                    >
+                      驳回
+                    </NButton>
+                    <NButton
+                      size="tiny"
+                      secondary
+                      :disabled="preparation.status !== 'READY' || commitBlocked"
+                      :loading="committingId === preparation.id"
+                      :title="
+                        preparation.status !== 'READY'
+                          ? '审批未齐备，不能提交'
+                          : commitBlocked
+                            ? '当前身份缺少 OPERATOR 职责'
+                            : undefined
+                      "
+                      @click="handleCommit(preparation)"
+                    >
+                      提交执行
+                    </NButton>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <EmptyState
+          v-else
+          title="暂无副作用准备单"
+          description="在「运行中心」对已成功的运行点「申请回滚」即可发起一张。"
+        >
+          <template #icon><ShieldAlert :size="18" class="text-muted" /></template>
+        </EmptyState>
       </Panel>
     </div>
   </div>

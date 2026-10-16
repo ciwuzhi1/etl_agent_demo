@@ -337,3 +337,40 @@ export interface OverviewMetrics {
   readyConnections: number
   fileAssets: number
 }
+
+/** 第 12 章：受 Harness 统一治理的 9 类副作用。 */
+export type SideEffectOperation =
+  | 'CANCEL_EXECUTION'
+  | 'ROLLBACK_DORIS'
+  | 'CLEANUP_DORIS'
+  | 'MIGRATE_SECRET'
+  | 'STAGE_SECRET_ROTATION'
+  | 'VALIDATE_SECRET_ROTATION'
+  | 'ACTIVATE_SECRET_ROTATION'
+  | 'ROLLBACK_SECRET_ROTATION'
+  | 'DESTROY_SECRET'
+
+export type SideEffectPreparationStatus =
+  | 'WAITING_APPROVAL'
+  | 'READY'
+  | 'COMMITTED'
+  | 'REJECTED'
+  | 'EXPIRED'
+  | 'DENIED'
+
+export type SideEffectExecutionStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+
+export interface SideEffectPreparation {
+  id: string
+  operation: SideEffectOperation
+  aggregateId: string
+  status: SideEffectPreparationStatus
+  executionStatus: SideEffectExecutionStatus
+  riskLevel: RiskLevel
+  factsSha256: string
+  requiredRoles: HarnessRole[]
+  requiredApprovals: number
+  requestedBy: string
+  expiresAt: string
+  committedAt: string | null
+}

@@ -149,7 +149,13 @@ async def request_cancellation(
     actor: uuid.UUID = Depends(actor_id),
     session: AsyncSession = Depends(get_session),
 ) -> ExecutionRunResponse:
-    """把运行推进到 CANCELLING，真正的引擎停止由 Worker 轮询该状态后代执行。"""
+    """把运行推进到可取消状态；真正的引擎停止由 Worker 轮询后代执行。
+
+    两条路径必须分开：``CANCELLING`` 的语义是"已提交给引擎，等它确认停止"，
+    而 ``QUEUED`` 还没投递到引擎、没有需要停止的作业，状态机也只允许
+    ``QUEUED → CANCELLED``。早期实现无条件写 ``CANCELLING``，导致刚 Commit
+    出来、最想撤销的那一刻点「取消」反而拿到 400。
+    """
     async with session.begin():
         run = await _load_run(session, run_id)
         await require_project_role(
@@ -159,8 +165,13 @@ async def request_cancellation(
             raise VersionConflict("执行已进入终态，无法取消")
         if run.status is ExecutionStatus.CANCELLING:
             return _run_response(run)
-        require_execution_transition(run.status, ExecutionStatus.CANCELLING)
-        run.status = ExecutionStatus.CANCELLING
+        target = (
+            ExecutionStatus.CANCELLED
+            if run.status is ExecutionStatus.QUEUED
+            else ExecutionStatus.CANCELLING
+        )
+        require_execution_transition(run.status, target)
+        run.status = target
         await session.flush()
         return _run_response(run)
 

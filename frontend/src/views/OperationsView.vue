@@ -13,9 +13,19 @@ import RiskBadge from '@/components/ui/RiskBadge.vue'
 import StatusTag from '@/components/ui/StatusTag.vue'
 import { useAsyncState } from '@/composables/useAsyncState'
 import { executionService } from '@/services/execution'
-import type { ExecutionRun } from '@/types/models'
+import { describeApiError } from '@/services/http'
+import { sideEffectService } from '@/services/sideEffects'
+import type { ExecutionRun, ExecutionStatus } from '@/types/models'
 
 const message = useMessage()
+
+// 已到终态的运行不能再取消；CANCELLING 已在取消途中，同样不重复提交。
+const TERMINAL_RUN_STATUSES = new Set<ExecutionStatus>([
+  'SUCCEEDED',
+  'FAILED',
+  'CANCELLING',
+  'CANCELLED',
+])
 
 const runsState = useAsyncState(() => executionService.listRuns())
 const workersState = useAsyncState(() => executionService.listWorkers())
@@ -62,8 +72,42 @@ async function refresh(): Promise<void> {
   }
 }
 
-function requestAction(label: string): void {
-  message.info(`${label}：已进入 Harness 统一副作用治理（演示环境不产生真实副作用）`)
+const acting = ref(false)
+
+/** 取消执行：把运行推进到 CANCELLING，真正的引擎停止由 Worker 轮询后代执行。 */
+async function handleCancel(run: ExecutionRun): Promise<void> {
+  acting.value = true
+  try {
+    await executionService.requestCancellation(run.id, '控制台手动取消')
+    message.success(`已请求取消 ${run.id.slice(0, 8)}，等待 Worker 代执行`)
+    await refresh()
+  } catch (caught) {
+    message.error(describeApiError(caught))
+  } finally {
+    acting.value = false
+  }
+}
+
+/**
+ * 申请回滚：只创建一张副作用 Preparation 交给 Harness 治理，
+ * 不直接产生副作用；仍需具名职责审批后才会 Commit。
+ */
+async function handleRollback(run: ExecutionRun): Promise<void> {
+  acting.value = true
+  try {
+    const preparation = await sideEffectService.requestRollback(run.id, {
+      run_id: run.id,
+      engine_status: run.status,
+    })
+    const roles = preparation.requiredRoles.join('、') || '审批人'
+    message.info(
+      `已创建回滚准备单 ${preparation.id.slice(0, 8)}（${preparation.status}），需 ${roles} 审批；请到「安全治理」完成审批`,
+    )
+  } catch (caught) {
+    message.error(describeApiError(caught))
+  } finally {
+    acting.value = false
+  }
 }
 
 onMounted(async () => {
@@ -150,8 +194,34 @@ onMounted(async () => {
           description="状态由引擎对账写入；迟到的错误不得改写已确认终态。"
         >
           <template #actions>
-            <NButton size="tiny" quaternary @click="requestAction('申请回滚')">申请回滚</NButton>
-            <NButton size="tiny" quaternary @click="requestAction('取消执行')">取消</NButton>
+            <template v-if="selectedRun">
+              <NButton
+                size="tiny"
+                quaternary
+                :loading="acting"
+                :disabled="selectedRun.status !== 'SUCCEEDED'"
+                :title="
+                  selectedRun.status !== 'SUCCEEDED' ? '只有已成功的运行才可申请回滚' : undefined
+                "
+                @click="handleRollback(selectedRun)"
+              >
+                申请回滚
+              </NButton>
+              <NButton
+                size="tiny"
+                quaternary
+                :loading="acting"
+                :disabled="TERMINAL_RUN_STATUSES.has(selectedRun.status)"
+                :title="
+                  TERMINAL_RUN_STATUSES.has(selectedRun.status)
+                    ? '已到终态的运行不能再取消'
+                    : undefined
+                "
+                @click="handleCancel(selectedRun)"
+              >
+                取消
+              </NButton>
+            </template>
           </template>
 
           <div v-if="!selectedRun" class="py-6 text-center text-xs text-muted">请选择一条执行记录</div>

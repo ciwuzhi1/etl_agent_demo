@@ -9,15 +9,18 @@
 - API 端点端到端（prepare → decide → commit）。
 """
 
+import secrets
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from etl_agent.application.evidence_ledger import EvidenceLedgerService
 from etl_agent.application.harness_policy import EmbeddedPolicyDecisionPoint
 from etl_agent.application.side_effect_harness import (
     SideEffectHarnessService,
@@ -43,8 +46,11 @@ from etl_agent.domain.side_effects import (
     SideEffectPreparationStatus,
 )
 from etl_agent.infrastructure.database import get_session
+from etl_agent.infrastructure.harness_signing import Ed25519Signer
 from etl_agent.infrastructure.models import (
     HarnessCommandOutbox,
+    HarnessEvidenceEvent,
+    HarnessEvidenceStream,
     HarnessSideEffectCapabilityGrant,
     HarnessSideEffectPreparation,
     Project,
@@ -53,6 +59,9 @@ from etl_agent.infrastructure.models import (
     User,
 )
 from etl_agent.main import app
+
+# 注入账本用例使用的稳定 key_id，用于断言终态事件确实由该账本签名。
+_INJECTED_KEY_ID = "side-effect-injected-test"
 
 
 class _DenyPDP:
@@ -526,6 +535,74 @@ async def test_worker_claim_complete_and_fail_cycle(session: AsyncSession) -> No
 
     with pytest.raises(ValueError, match="租约"):
         await claim_committed_side_effect(session, "worker-5", lease_seconds=5)
+
+
+async def _events_of(session: AsyncSession, preparation_id: Any) -> list[HarnessEvidenceEvent]:
+    """按副作用准备单 ID 取回该证据流的全部事件（按序号）。"""
+    return list(
+        (
+            await session.scalars(
+                select(HarnessEvidenceEvent)
+                .join(
+                    HarnessEvidenceStream,
+                    HarnessEvidenceStream.id == HarnessEvidenceEvent.stream_id,
+                )
+                .where(HarnessEvidenceStream.stream_key == str(preparation_id))
+                .order_by(HarnessEvidenceEvent.sequence)
+            )
+        ).all()
+    )
+
+
+@pytest.mark.asyncio
+async def test_terminal_side_effect_evidence_is_signed_by_default(session: AsyncSession) -> None:
+    """不传账本时，终态证据也必须带签名：默认再退回无签名账本就是本次修掉的缺陷。"""
+    fixtures = await _seed_project(session)
+    service = _service()
+    preparation = await _approved_preparation(session, fixtures, service=service)
+    result = await service.commit(
+        session,
+        preparation_id=preparation.id,
+        committed_by=fixtures.engineer.id,
+    )
+    await claim_committed_side_effect(session, "worker-sign")
+    await complete_side_effect(session, result.execution_id, {"cancelled": True})
+
+    events = await _events_of(session, preparation.id)
+    final = events[-1]
+    assert final.event_type == "EXECUTION_SUCCEEDED"
+    assert final.signature_algorithm == "Ed25519"
+    assert final.signature_key_id
+    assert final.signature_value
+
+
+@pytest.mark.asyncio
+async def test_terminal_side_effect_honours_injected_ledger(session: AsyncSession) -> None:
+    """显式注入的账本必须被终态函数采用，而不是被内联构造的账本悄悄顶掉。"""
+    signer = Ed25519Signer(secrets.token_bytes(32), _INJECTED_KEY_ID)
+    ledger = EvidenceLedgerService(signer=signer, key_id=_INJECTED_KEY_ID)
+    fixtures = await _seed_project(session)
+    service = _service()
+    preparation = await _approved_preparation(session, fixtures, service=service)
+    result = await service.commit(
+        session,
+        preparation_id=preparation.id,
+        committed_by=fixtures.engineer.id,
+    )
+    await claim_committed_side_effect(session, "worker-inject")
+    await fail_side_effect(
+        session,
+        result.execution_id,
+        "外部系统不可用",
+        ledger=ledger,
+    )
+
+    events = await _events_of(session, preparation.id)
+    final = events[-1]
+    assert final.event_type == "EXECUTION_FAILED"
+    assert final.signature_algorithm == "Ed25519"
+    assert final.signature_key_id == _INJECTED_KEY_ID
+    assert final.signature_value
 
 
 @pytest.mark.asyncio

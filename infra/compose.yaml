@@ -116,6 +116,11 @@ services:
     hostname: seatunnel-master
     environment:
       ST_DOCKER_MEMBER_LIST: "seatunnel-master:5801,seatunnel-worker:5801"
+    extra_hosts:
+      # 容器内 host.docker.internal 默认解析成 IPv6，而 Doris Sink 用的 Apache
+      # HttpClient 不做 Happy Eyeballs，会卡在 IPv6 上让 fenodes 请求拿到非法响应。
+      # host-gateway 强制给出宿主机 IPv4，使平台登记的 host.docker.internal 可用。
+      - "host.docker.internal:host-gateway"
     entrypoint: ["/bin/sh", "-c", "/opt/seatunnel/bin/seatunnel-cluster.sh -r master"]
     ports:
       - "15801:5801"
@@ -149,6 +154,8 @@ services:
     hostname: seatunnel-worker
     environment:
       ST_DOCKER_MEMBER_LIST: "seatunnel-master:5801,seatunnel-worker:5801"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     entrypoint: ["/bin/sh", "-c", "/opt/seatunnel/bin/seatunnel-cluster.sh -r worker"]
     volumes:
       - ../var/file-assets:/data/file-assets:ro

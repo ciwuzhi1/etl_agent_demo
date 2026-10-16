@@ -10,6 +10,7 @@
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -17,13 +18,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from etl_agent.application.execution import ExecutionService
+from etl_agent.application.execution_credentials import materialize_execution_placeholders
 from etl_agent.application.execution_diagnostics import diagnose_execution_failure
 from etl_agent.asyncio_compat import run_async
 from etl_agent.config import get_settings
 from etl_agent.domain.enums import ExecutionStatus
 from etl_agent.domain.errors import DomainError
+from etl_agent.domain.harness import HarnessOutboxStatus
 from etl_agent.infrastructure.database import SessionFactory
-from etl_agent.infrastructure.models import ExecutionRun, PipelineArtifact
+from etl_agent.infrastructure.models import (
+    ExecutionRun,
+    HarnessCommandOutbox,
+    Pipeline,
+    PipelineArtifact,
+    PipelineVersion,
+)
 from etl_agent.infrastructure.seatunnel.zeta_adapter import (
     SeatunnelSubmitRequest,
     ZetaRestAdapter,
@@ -172,6 +181,8 @@ async def _submit_execution(run_id: uuid.UUID) -> dict[str, object]:
             service = ExecutionService()
             await service.mark_submitted(session, run_id, job_id)
             await service.mark_running(session, run_id)
+    # 作业已在引擎里跑，立刻投出第一条监控命令，否则没人把终态写回 Run。
+    await _enqueue_monitor(run_id, delay_seconds=_MONITOR_POLL_SECONDS)
     return {
         "run_id": str(run_id),
         "status": ExecutionStatus.RUNNING.value,
@@ -180,7 +191,11 @@ async def _submit_execution(run_id: uuid.UUID) -> dict[str, object]:
 
 
 async def _load_hocon(version_id: uuid.UUID) -> str:
-    """读取某 Pipeline 版本最新的 SeaTunnel 制品正文；没有可用制品时返回空串。"""
+    """读取某版本的 SeaTunnel 制品正文并物化平台占位符；没有可用制品时返回空串。
+
+    物化要用到连接的 Secret 与主机信息，所以在同一会话内完成：制品本身只带
+    ``${<CONNECTOR>_...}`` 占位符，真实凭据直到这里才进入内存。
+    """
     async with SessionFactory() as session:
         artifact = await session.scalar(
             select(PipelineArtifact)
@@ -191,10 +206,53 @@ async def _load_hocon(version_id: uuid.UUID) -> str:
             .order_by(PipelineArtifact.created_at.desc())
             .limit(1)
         )
-        uri = artifact.uri if artifact is not None else None
-    if not uri:
-        return ""
-    return _read_hocon_artifact(uri)
+        if artifact is None or not artifact.uri:
+            return ""
+        hocon = _read_hocon_artifact(artifact.uri)
+        if not hocon:
+            return ""
+        version = await session.get(PipelineVersion, version_id)
+        plan = dict(version.plan) if version is not None and version.plan else None
+        return await materialize_execution_placeholders(session, plan=plan, hocon=hocon)
+
+
+_MONITOR_POLL_SECONDS = 5
+# 引擎侧终态：出现即停止续投，交给 _advance_from_engine_status 落库。
+_ENGINE_TERMINAL_STATUSES = frozenset(
+    {"FINISHED", "SUCCEEDED", "SUCCESS", "FAILED", "CANCELED", "CANCELLED"}
+)
+
+
+async def _enqueue_monitor(run_id: uuid.UUID, *, delay_seconds: int = 0) -> None:
+    """把一次作业状态轮询写进事务 Outbox，交给 ``scan-outbox`` 扫描后派发。
+
+    提交与监控都由这条 Outbox 命令驱动：作业提交成功后投出第一条，此后每条监控
+    命令若发现引擎仍在运行便自行续投，直到引擎给出终态为止——否则 Run 会永远停在
+    RUNNING（作业早已 FINISHED，只是没人回写）。
+    """
+    async with SessionFactory() as session:
+        async with session.begin():
+            row = (
+                await session.execute(
+                    select(ExecutionRun, Pipeline.project_id)
+                    .join(PipelineVersion, PipelineVersion.id == ExecutionRun.pipeline_version_id)
+                    .join(Pipeline, Pipeline.id == PipelineVersion.pipeline_id)
+                    .where(ExecutionRun.id == run_id)
+                )
+            ).first()
+            if row is None:
+                return
+            run, project_id = row
+            session.add(
+                HarnessCommandOutbox(
+                    project_id=project_id,
+                    command_payload={"execution_run_id": str(run_id)},
+                    target="worker.execution.monitor",
+                    status=HarnessOutboxStatus.PENDING,
+                    available_at=datetime.now(UTC) + timedelta(seconds=delay_seconds),
+                    created_by=run.requested_by,
+                )
+            )
 
 
 async def _monitor_execution(run_id: uuid.UUID) -> dict[str, object]:
@@ -220,6 +278,9 @@ async def _monitor_execution(run_id: uuid.UUID) -> dict[str, object]:
 
     engine_status = info.status.strip().upper()
     await _advance_from_engine_status(run_id, engine_status)
+    # 尚未到终态就续投下一条，形成自续轮询直到引擎收敛。
+    if engine_status not in _ENGINE_TERMINAL_STATUSES:
+        await _enqueue_monitor(run_id, delay_seconds=_MONITOR_POLL_SECONDS)
     return {"run_id": str(run_id), "engine_status": engine_status}
 
 

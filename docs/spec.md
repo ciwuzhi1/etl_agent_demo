@@ -355,14 +355,18 @@ erDiagram
 
 | 编号 | 方法 | 路径 | 说明 |
 |------|------|------|------|
-| API-01 | POST | `/api/v1/projects/bootstrap` | 一次性初始化（成功后永久 409） |
-| API-02 | POST | `/api/v1/connections` → `/connections/{id}/tests` 与 `/connections/{id}/profiles` | 登记连接、异步测试与探查（202） |
-| API-03 | POST | `/api/v1/pipelines/versions/{id}/generation` | 启动候选生成（投递 AgentRun，202） |
-| API-04 | POST | `/api/v1/pipeline-versions/{id}/approval-requests` → `/approval-requests/{id}/decisions` | 版本四眼审批 |
-| API-05 | POST | `/api/v1/pipeline-versions/{id}/execution-preparations` | Prepare（冻结事实，无副作用，201） |
-| API-06 | POST | `/api/v1/execution-preparations/{id}/decisions` | 具名职责审批 |
-| API-07 | POST | `/api/v1/execution-preparations/{id}/commit` | Commit（仅 OPERATOR，202，创建 Run+Outbox） |
-| API-08 | GET | `/api/v1/execution-runs/{id}`（`/events`、`/supervision-snapshots`、`/quality-report`） | 执行台账与观测 |
+| API-01 | POST | `/api/v1/projects/bootstrap` | 一次性初始化（成功后永久 409）。**实现一致**：开关关闭或 Token 无效 → 403，成功 → 201 |
+| API-02 | POST | `/api/v1/connections` → `/connections/{id}/tests` 与 `/connections/{id}/profiles` | 登记连接、异步测试与探查（202）。**实现一致**：`/tests` 原为 200，已于 2026-10-15 对齐为 202 |
+| API-03 | POST | `/api/v1/pipelines/versions/{id}/generation` | 启动候选生成（投递 AgentRun，202）。**实现差异**：实际路径是 `/api/v1/pipeline-versions/{version_id}/record-generation`，且未声明状态码（默认 200）；路径与状态码两者都未对齐，见文末「实现差异」 |
+| API-04 | POST | `/api/v1/pipeline-versions/{id}/approval-requests` → `/approval-requests/{id}/decisions` | 版本四眼审批。**实现差异**：实际为 `/api/v1/pipeline-versions/{version_id}/approvals`（201）→ `/api/v1/approvals/{approval_id}/decisions`（200） |
+| API-05 | POST | `/api/v1/pipeline-versions/{id}/execution-preparations` | Prepare（冻结事实，无副作用，201）。**实现一致** |
+| API-06 | POST | `/api/v1/execution-preparations/{id}/decisions` | 具名职责审批。**实现一致**（200） |
+| API-07 | POST | `/api/v1/execution-preparations/{id}/commit` | Commit（仅 OPERATOR，202，创建 Run+Outbox）。**实现一致**：202，重复提交幂等返回同一 `execution_run_id` |
+| API-08 | GET | `/api/v1/execution-runs/{id}`（`/events`、`/supervision-snapshots`、`/quality-report`） | 执行台账与观测。**实现差异**：监督快照实际为 `/execution-runs/{run_id}/supervision` 与 `/supervision/latest`，而非 `/supervision-snapshots` |
+
+> **实现差异汇总（2026-10-15 全量验收实测）**：API-03、API-04、API-08 三处路径命名与本表不一致。
+> 这三处是**命名漂移**而非行为缺陷——实际端点可用、有测试覆盖、前端按实际路径调用。
+> 重命名公开端点属于破坏性变更（需同步前端与调用方），因此此处只如实标注差异，尚未强制对齐。
 
 **OpenAPI 片段（API-07 Commit）**：
 

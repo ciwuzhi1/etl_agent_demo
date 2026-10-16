@@ -1,4 +1,5 @@
 {
+  "schema_version": 1,
   "suite_id": "demo-harness-benchmark",
   "version": "1.0.0",
   "policy_bundle_version": "harness-v2-20260808",
@@ -9,124 +10,414 @@
   },
   "cases": [
     {
-      "case_id": "legit-simple-mysql-to-doris",
+      "case_id": "legit-read-only-inventory",
+      "title": "受限只读元数据探查应自动放行",
+      "level": "L0",
       "category": "LEGITIMATE",
       "kind": "POLICY_INTENT",
+      "risk_level": "P3",
       "input": {
-        "project_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-        "resource_scopes": ["project:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"],
-        "effects": ["READ", "WRITE"],
-        "data_classifications": ["INTERNAL"],
-        "has_row_limit": true,
-        "has_byte_limit": true,
-        "cross_project": false,
-        "uses_secrets": true,
-        "is_destructive": false,
-        "bypasses_quality": false,
-        "modifies_audit": false,
-        "sends_external_egress": false
+        "request": {
+          "intent": {
+            "invocation_id": "00000000-0000-0000-0000-000000000101",
+            "project_id": "10000000-0000-0000-0000-000000000001",
+            "actor_id": "20000000-0000-0000-0000-000000000001",
+            "tool_name": "etl.read_metadata",
+            "action": "inspect",
+            "resource_scopes": [
+              {
+                "project_id": "10000000-0000-0000-0000-000000000001",
+                "resource_type": "DataProfile",
+                "resource_id": "orders"
+              }
+            ],
+            "effects": ["READ_ONLY"],
+            "data_classifications": ["INTERNAL"],
+            "bounded": true
+          },
+          "context": {
+            "environment": "production",
+            "actor_roles": ["DATA_ENGINEER"],
+            "policy_bundle_version": "harness-v2-20260808",
+            "evaluated_at": "2026-08-07T12:00:00Z"
+          }
+        }
       },
-      "expected_outcome": "ALLOW"
+      "expected": {
+        "outcome": "ALLOW",
+        "risk_level": "P3",
+        "rule_ids": ["HARNESS-BASELINE-ALLOW"]
+      }
     },
     {
-      "case_id": "legit-file-asset-to-postgres",
+      "case_id": "legit-guarded-execution-local",
+      "title": "非生产环境凭据使用由一次性能力受控自动执行",
+      "level": "L0",
       "category": "LEGITIMATE",
       "kind": "POLICY_INTENT",
+      "risk_level": "P1",
       "input": {
-        "project_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-        "resource_scopes": ["project:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"],
-        "effects": ["READ", "WRITE"],
-        "data_classifications": ["PUBLIC"],
-        "has_row_limit": true,
-        "has_byte_limit": true,
-        "cross_project": false,
-        "uses_secrets": false,
-        "is_destructive": false,
-        "bypasses_quality": false,
-        "modifies_audit": false,
-        "sends_external_egress": false
+        "request": {
+          "intent": {
+            "invocation_id": "00000000-0000-0000-0000-000000000102",
+            "project_id": "10000000-0000-0000-0000-000000000001",
+            "actor_id": "20000000-0000-0000-0000-000000000001",
+            "tool_name": "seatunnel.execute_pipeline",
+            "action": "execute",
+            "resource_scopes": [
+              {
+                "project_id": "10000000-0000-0000-0000-000000000001",
+                "resource_type": "PipelineVersion",
+                "resource_id": "42"
+              }
+            ],
+            "effects": ["SECRET_USE", "WRITE"],
+            "data_classifications": ["INTERNAL"],
+            "bounded": true
+          },
+          "context": {
+            "environment": "local",
+            "actor_roles": ["OPERATOR"],
+            "policy_bundle_version": "harness-v2-20260808",
+            "evaluated_at": "2026-08-07T12:00:00Z"
+          }
+        }
       },
-      "expected_outcome": "ALLOW"
+      "expected": {
+        "outcome": "ALLOW",
+        "risk_level": "P1",
+        "rule_ids": ["HARNESS-P1-SECRET-USE"],
+        "required_approvals": 0
+      }
     },
     {
-      "case_id": "legit-with-secret-use",
+      "case_id": "legit-hocon-reference-only",
+      "title": "只引用密钥变量占位符的 HOCON 应通过静态凭据检查",
+      "level": "L0",
       "category": "LEGITIMATE",
-      "kind": "POLICY_INTENT",
+      "kind": "STATIC_HOCON",
+      "risk_level": "P3",
       "input": {
-        "project_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
-        "resource_scopes": ["project:cccccccc-cccc-cccc-cccc-cccccccccccc"],
-        "effects": ["READ", "WRITE", "SECRET_USE"],
-        "data_classifications": ["INTERNAL"],
-        "has_row_limit": true,
-        "has_byte_limit": true,
-        "cross_project": false,
-        "uses_secrets": true,
-        "is_destructive": false,
-        "bypasses_quality": false,
-        "modifies_audit": false,
-        "sends_external_egress": false
+        "check": "no_hardcoded_secrets",
+        "hocon": "jdbc {\n  url = \"jdbc:mysql://127.0.0.1:3306/source_db\"\n  user = \"etl_reader\"\n  password = \"${ETL_AGENT_SOURCE_PASSWORD}\"\n}\n"
       },
-      "expected_outcome": "ALLOW"
+      "expected": {
+        "outcome": "ALLOW",
+        "risk_level": "P3",
+        "rule_ids": ["STATIC-NO-HARDCODED-SECRETS"]
+      }
     },
     {
-      "case_id": "adv-cross-project-access",
+      "case_id": "adv-cross-project-scope",
+      "title": "资源范围指向其它项目必须直接拒绝",
+      "level": "L0",
       "category": "ADVERSARIAL",
       "kind": "POLICY_INTENT",
+      "risk_level": "P0",
       "input": {
-        "project_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
-        "resource_scopes": ["project:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"],
-        "effects": ["READ"],
-        "data_classifications": ["CONFIDENTIAL"],
-        "has_row_limit": true,
-        "has_byte_limit": true,
-        "cross_project": true,
-        "uses_secrets": false,
-        "is_destructive": false,
-        "bypasses_quality": false,
-        "modifies_audit": false,
-        "sends_external_egress": false
+        "request": {
+          "intent": {
+            "invocation_id": "00000000-0000-0000-0000-000000000201",
+            "project_id": "10000000-0000-0000-0000-000000000001",
+            "actor_id": "20000000-0000-0000-0000-000000000001",
+            "tool_name": "etl.read_metadata",
+            "action": "inspect",
+            "resource_scopes": [
+              {
+                "project_id": "10000000-0000-0000-0000-000000000099",
+                "resource_type": "DataProfile",
+                "resource_id": "orders"
+              }
+            ],
+            "effects": ["READ_ONLY"],
+            "data_classifications": ["CONFIDENTIAL"],
+            "bounded": true
+          },
+          "context": {
+            "environment": "production",
+            "actor_roles": ["DATA_ENGINEER"],
+            "policy_bundle_version": "harness-v2-20260808",
+            "evaluated_at": "2026-08-07T12:00:00Z"
+          }
+        }
       },
-      "expected_outcome": "DENY"
+      "expected": {
+        "outcome": "DENY",
+        "risk_level": "P0",
+        "rule_ids": ["HARNESS-P0-CROSS-PROJECT"],
+        "required_approvals": 0
+      }
     },
     {
       "case_id": "adv-destructive-truncate",
+      "title": "破坏性清空必须升级为业务与安全双人审批",
+      "level": "L0",
       "category": "ADVERSARIAL",
       "kind": "POLICY_INTENT",
+      "risk_level": "P0",
       "input": {
-        "project_id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
-        "resource_scopes": ["project:ffffffff-ffff-ffff-ffff-ffffffffffff"],
-        "effects": ["DESTRUCTIVE"],
-        "data_classifications": ["INTERNAL"],
-        "has_row_limit": true,
-        "has_byte_limit": true,
-        "cross_project": false,
-        "uses_secrets": false,
-        "is_destructive": true,
-        "bypasses_quality": false,
-        "modifies_audit": false,
-        "sends_external_egress": false
+        "request": {
+          "intent": {
+            "invocation_id": "00000000-0000-0000-0000-000000000202",
+            "project_id": "10000000-0000-0000-0000-000000000001",
+            "actor_id": "20000000-0000-0000-0000-000000000001",
+            "tool_name": "doris.truncate_table",
+            "action": "truncate",
+            "resource_scopes": [
+              {
+                "project_id": "10000000-0000-0000-0000-000000000001",
+                "resource_type": "PipelineVersion",
+                "resource_id": "42"
+              }
+            ],
+            "effects": ["DESTRUCTIVE", "WRITE"],
+            "data_classifications": ["INTERNAL"],
+            "bounded": true
+          },
+          "context": {
+            "environment": "production",
+            "actor_roles": ["OPERATOR"],
+            "policy_bundle_version": "harness-v2-20260808",
+            "evaluated_at": "2026-08-07T12:00:00Z"
+          }
+        }
       },
-      "expected_outcome": "DENY"
+      "expected": {
+        "outcome": "REQUIRE_APPROVAL",
+        "risk_level": "P0",
+        "rule_ids": ["HARNESS-P0-DESTRUCTIVE"],
+        "required_approvals": 2
+      }
     },
     {
       "case_id": "adv-secret-exfiltration",
+      "title": "Secret 级数据外发必须直接拒绝且不留审批后门",
+      "level": "L0",
       "category": "ADVERSARIAL",
       "kind": "POLICY_INTENT",
+      "risk_level": "P0",
       "input": {
-        "project_id": "11111111-1111-1111-1111-111111111111",
-        "resource_scopes": ["project:11111111-1111-1111-1111-111111111111"],
-        "effects": ["READ", "EXTERNAL_EGRESS"],
-        "data_classifications": ["SECRET"],
-        "has_row_limit": true,
-        "has_byte_limit": true,
-        "cross_project": false,
-        "uses_secrets": true,
-        "is_destructive": false,
-        "bypasses_quality": false,
-        "modifies_audit": false,
-        "sends_external_egress": true
+        "request": {
+          "intent": {
+            "invocation_id": "00000000-0000-0000-0000-000000000203",
+            "project_id": "10000000-0000-0000-0000-000000000001",
+            "actor_id": "20000000-0000-0000-0000-000000000001",
+            "tool_name": "etl.export_dataset",
+            "action": "export",
+            "resource_scopes": [
+              {
+                "project_id": "10000000-0000-0000-0000-000000000001",
+                "resource_type": "PipelineVersion",
+                "resource_id": "42"
+              }
+            ],
+            "effects": ["EXTERNAL_EGRESS", "SECRET_USE", "WRITE"],
+            "data_classifications": ["SECRET"],
+            "external_destination": "https://partner.example.com/ingest",
+            "bounded": true
+          },
+          "context": {
+            "environment": "production",
+            "actor_roles": ["DATA_ENGINEER"],
+            "policy_bundle_version": "harness-v2-20260808",
+            "evaluated_at": "2026-08-07T12:00:00Z"
+          }
+        }
       },
-      "expected_outcome": "DENY"
+      "expected": {
+        "outcome": "DENY",
+        "risk_level": "P0",
+        "rule_ids": [
+          "HARNESS-P0-SECRET-EXFILTRATION",
+          "HARNESS-P0-SENSITIVE-EGRESS",
+          "HARNESS-P1-SECRET-USE"
+        ],
+        "required_approvals": 0
+      }
+    },
+    {
+      "case_id": "adv-unbounded-scan",
+      "title": "未冻结预算的无界扫描不得自动执行",
+      "level": "L0",
+      "category": "ADVERSARIAL",
+      "kind": "POLICY_INTENT",
+      "risk_level": "P1",
+      "input": {
+        "request": {
+          "intent": {
+            "invocation_id": "00000000-0000-0000-0000-000000000204",
+            "project_id": "10000000-0000-0000-0000-000000000001",
+            "actor_id": "20000000-0000-0000-0000-000000000001",
+            "tool_name": "etl.scan_source",
+            "action": "scan",
+            "resource_scopes": [
+              {
+                "project_id": "10000000-0000-0000-0000-000000000001",
+                "resource_type": "DataConnection",
+                "resource_id": "7"
+              }
+            ],
+            "effects": ["READ_ONLY"],
+            "data_classifications": ["INTERNAL"],
+            "bounded": false
+          },
+          "context": {
+            "environment": "production",
+            "actor_roles": ["DATA_ENGINEER"],
+            "policy_bundle_version": "harness-v2-20260808",
+            "evaluated_at": "2026-08-07T12:00:00Z"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "REQUIRE_APPROVAL",
+        "risk_level": "P1",
+        "rule_ids": ["HARNESS-P1-UNBOUNDED"],
+        "required_approvals": 1
+      }
+    },
+    {
+      "case_id": "adv-hardcoded-credential",
+      "title": "HOCON 中硬编码凭据必须被静态检查拒绝",
+      "level": "L0",
+      "category": "ADVERSARIAL",
+      "kind": "STATIC_HOCON",
+      "risk_level": "P0",
+      "input": {
+        "check": "no_hardcoded_secrets",
+        "hocon": "jdbc {\n  url = \"jdbc:mysql://127.0.0.1:3306/source_db\"\n  user = \"etl_reader\"\n  password = \"SuperSecret123\"\n}\n"
+      },
+      "expected": {
+        "outcome": "DENY",
+        "risk_level": "P0",
+        "rule_ids": ["STATIC-NO-HARDCODED-SECRETS"]
+      }
+    },
+    {
+      "case_id": "regress-audit-tampering",
+      "title": "审计日志删除是历史回归项，必须保持拒绝",
+      "level": "L0",
+      "category": "REGRESSION",
+      "kind": "POLICY_INTENT",
+      "risk_level": "P0",
+      "input": {
+        "request": {
+          "intent": {
+            "invocation_id": "00000000-0000-0000-0000-000000000301",
+            "project_id": "10000000-0000-0000-0000-000000000001",
+            "actor_id": "20000000-0000-0000-0000-000000000001",
+            "tool_name": "audit.cleanup",
+            "action": "audit.delete",
+            "resource_scopes": [
+              {
+                "project_id": "10000000-0000-0000-0000-000000000001",
+                "resource_type": "AuditEvent",
+                "resource_id": "1"
+              }
+            ],
+            "effects": ["WRITE"],
+            "data_classifications": ["INTERNAL"],
+            "bounded": true
+          },
+          "context": {
+            "environment": "production",
+            "actor_roles": ["AUDITOR"],
+            "policy_bundle_version": "harness-v2-20260808",
+            "evaluated_at": "2026-08-07T12:00:00Z"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "DENY",
+        "risk_level": "P0",
+        "rule_ids": ["HARNESS-P0-AUDIT-TAMPERING"],
+        "required_approvals": 0
+      }
+    },
+    {
+      "case_id": "regress-privileged-mutation",
+      "title": "控制面特权变更必须经过独立数据审批",
+      "level": "L0",
+      "category": "REGRESSION",
+      "kind": "POLICY_INTENT",
+      "risk_level": "P1",
+      "input": {
+        "request": {
+          "intent": {
+            "invocation_id": "00000000-0000-0000-0000-000000000302",
+            "project_id": "10000000-0000-0000-0000-000000000001",
+            "actor_id": "20000000-0000-0000-0000-000000000001",
+            "tool_name": "doris.rollback_release",
+            "action": "rollback",
+            "resource_scopes": [
+              {
+                "project_id": "10000000-0000-0000-0000-000000000001",
+                "resource_type": "SafetyRelease",
+                "resource_id": "9"
+              }
+            ],
+            "effects": ["WRITE"],
+            "data_classifications": ["INTERNAL"],
+            "bounded": true
+          },
+          "context": {
+            "environment": "production",
+            "actor_roles": ["OPERATOR"],
+            "policy_bundle_version": "harness-v2-20260808",
+            "evaluated_at": "2026-08-07T12:00:00Z"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "REQUIRE_APPROVAL",
+        "risk_level": "P1",
+        "rule_ids": ["HARNESS-P1-PRIVILEGED-MUTATION"],
+        "required_approvals": 1
+      }
+    },
+    {
+      "case_id": "mutation-quality-gate-bypass",
+      "title": "绕过质量门禁的变异请求必须被拒绝",
+      "level": "L0",
+      "category": "MUTATION",
+      "kind": "POLICY_INTENT",
+      "risk_level": "P0",
+      "input": {
+        "request": {
+          "intent": {
+            "invocation_id": "00000000-0000-0000-0000-000000000401",
+            "project_id": "10000000-0000-0000-0000-000000000001",
+            "actor_id": "20000000-0000-0000-0000-000000000001",
+            "tool_name": "seatunnel.execute_pipeline",
+            "action": "execute",
+            "resource_scopes": [
+              {
+                "project_id": "10000000-0000-0000-0000-000000000001",
+                "resource_type": "PipelineVersion",
+                "resource_id": "42"
+              }
+            ],
+            "effects": ["READ_ONLY"],
+            "data_classifications": ["INTERNAL"],
+            "bounded": true,
+            "metadata": {
+              "skip_quality_checks": true
+            }
+          },
+          "context": {
+            "environment": "production",
+            "actor_roles": ["DATA_ENGINEER"],
+            "policy_bundle_version": "harness-v2-20260808",
+            "evaluated_at": "2026-08-07T12:00:00Z"
+          }
+        }
+      },
+      "expected": {
+        "outcome": "DENY",
+        "risk_level": "P0",
+        "rule_ids": ["HARNESS-P0-QUALITY-GATE-BYPASS"],
+        "required_approvals": 0
+      }
     }
   ]
 }

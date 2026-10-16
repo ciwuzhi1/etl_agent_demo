@@ -15,7 +15,7 @@ import { useAsyncState } from '@/composables/useAsyncState'
 import { useSession } from '@/composables/useSession'
 import { describeApiError } from '@/services/http'
 import { studioService } from '@/services/studio'
-import type { AgentRunStatus, AgentStep } from '@/types/models'
+import type { AgentRunStatus, AgentStep, ExecutionPreparation, HarnessRole } from '@/types/models'
 
 const message = useMessage()
 const session = useSession()
@@ -28,6 +28,16 @@ const designState = useAsyncState(() => studioService.getDesign())
 const stepsState = useAsyncState(() => studioService.listAgentSteps(activeRunId.value ?? undefined))
 const runState = useAsyncState(() => studioService.getAgentRun(activeRunId.value ?? undefined))
 const preparationsState = useAsyncState(() => studioService.listPreparations())
+// 准备单只带 pipeline_version_id，版本号要靠版本列表还原，否则表格永远显示 v0。
+const versionsState = useAsyncState(() => studioService.listDesigns())
+
+const versionNumberById = computed(() => {
+  const lookup = new Map<string, number>()
+  for (const design of versionsState.data.value ?? []) {
+    lookup.set(design.version.id, design.version.versionNumber)
+  }
+  return lookup
+})
 
 const requirement = ref(
   '把 MySQL 的订单同步到 Doris：清理客户名称两侧空格，金额必须为正，邮箱脱敏，错误数据单独保存，每天凌晨执行。',
@@ -51,6 +61,9 @@ const sinkProfile = ref('prof-clean-orders-sink')
 const commitBlocked = computed(() => !session.hasHarnessRole('OPERATOR'))
 const generating = ref(false)
 const committing = ref(false)
+const decidingId = ref<string | null>(null)
+const answerText = ref('')
+const answering = ref(false)
 
 // AgentRun 是异步图任务：QUEUED/RUNNING 期间有界轮询，直到进入终态信号。
 const RUN_TERMINAL = new Set<AgentRunStatus>(['WAITING_APPROVAL', 'WAITING_INPUT', 'FAILED'])
@@ -94,6 +107,23 @@ async function refreshDesign(): Promise<void> {
   }
 }
 
+async function pollActiveRun(runId: string): Promise<AgentRunStatus> {
+  /** 轮询到 run 终态，并同步刷新六节点步骤与候选方案状态。 */
+  activeRunId.value = runId
+  await runState.run()
+  await stepsState.run()
+  let status: AgentRunStatus = runState.data.value?.status ?? 'QUEUED'
+  for (let attempt = 0; attempt < RUN_POLL_LIMIT && !RUN_TERMINAL.has(status); attempt += 1) {
+    await sleep(RUN_POLL_INTERVAL_MS)
+    await runState.run()
+    await stepsState.run()
+    status = runState.data.value?.status ?? status
+  }
+  await refreshDesign()
+  await preparationsState.run()
+  return status
+}
+
 async function handleGenerate(): Promise<void> {
   const text = requirement.value.trim()
   if (!text) {
@@ -108,23 +138,12 @@ async function handleGenerate(): Promise<void> {
       throw new Error('工作区尚未就绪，请重新登录')
     }
     const run = await studioService.startAgentRun(projectId, text, [])
-    activeRunId.value = run.id
-    await runState.run()
-    await stepsState.run()
-
-    let status: AgentRunStatus = runState.data.value?.status ?? run.status
-    for (let attempt = 0; attempt < RUN_POLL_LIMIT && !RUN_TERMINAL.has(status); attempt += 1) {
-      await sleep(RUN_POLL_INTERVAL_MS)
-      await runState.run()
-      await stepsState.run()
-      status = runState.data.value?.status ?? status
-    }
-
-    await refreshDesign()
-    await preparationsState.run()
+    const status = await pollActiveRun(run.id)
 
     if (status === 'FAILED') {
       message.error(runState.data.value?.message || 'Agent 生成失败')
+    } else if (status === 'WAITING_INPUT') {
+      message.info('Agent 需要补充澄清，请在下方回答后继续')
     } else if (RUN_TERMINAL.has(status)) {
       message.success('Agent 生成完成，已刷新候选方案')
     } else {
@@ -134,6 +153,92 @@ async function handleGenerate(): Promise<void> {
     message.error(describeApiError(caught))
   } finally {
     generating.value = false
+  }
+}
+
+/** 提交澄清回答：run 重新排队，图带着「追问 + 回答」继续跑。 */
+async function handleAnswer(): Promise<void> {
+  const runId = runState.data.value?.id
+  const text = answerText.value.trim()
+  if (!runId) {
+    message.warning('没有正在等待澄清的生成任务')
+    return
+  }
+  if (!text) {
+    message.warning('请先输入澄清内容')
+    return
+  }
+  answering.value = true
+  try {
+    await studioService.answerAgentRun(runId, text)
+    answerText.value = ''
+    const status = await pollActiveRun(runId)
+    if (status === 'WAITING_INPUT') {
+      message.info('Agent 仍有新问题，请继续澄清')
+    } else {
+      message.success('已提交回答，Agent 继续执行')
+    }
+  } catch (caught) {
+    message.error(describeApiError(caught))
+  } finally {
+    answering.value = false
+  }
+}
+
+/** 当前身份在该准备单要求的职责里实际持有的那一个；一个都不持有则为 null。 */
+function heldRequiredRole(preparation: ExecutionPreparation): HarnessRole | null {
+  return preparation.requiredRoles.find((role) => session.hasHarnessRole(role)) ?? null
+}
+
+/** 只有等待审批的准备单可以占审批槽，其余状态后端会拒绝。 */
+function canDecide(preparation: ExecutionPreparation): boolean {
+  return preparation.status === 'WAITING_APPROVAL' && heldRequiredRole(preparation) !== null
+}
+
+function decisionBlockedReason(preparation: ExecutionPreparation): string | undefined {
+  if (preparation.status !== 'WAITING_APPROVAL') {
+    return `准备单已处于 ${preparation.status}，无需审批`
+  }
+  if (heldRequiredRole(preparation) === null) {
+    const roles = preparation.requiredRoles.join('、') || '审批人'
+    return `当前身份缺少所需职责（${roles}），请切换身份后审批`
+  }
+  return undefined
+}
+
+/** 具名职责审批：占用一个审批槽，理由进审计。审批满额后准备单转 READY。 */
+async function handleDecision(
+  preparation: ExecutionPreparation,
+  decision: 'APPROVE' | 'REJECT',
+): Promise<void> {
+  const role = heldRequiredRole(preparation)
+  if (!role) {
+    message.warning(decisionBlockedReason(preparation) ?? '当前身份无法审批该准备单')
+    return
+  }
+  decidingId.value = preparation.id
+  try {
+    await studioService.decidePreparation(
+      preparation.id,
+      role,
+      decision,
+      decision === 'APPROVE' ? '控制台审批通过' : '控制台驳回',
+    )
+    await preparationsState.run()
+    if (decision === 'APPROVE') {
+      const latest = (preparationsState.data.value ?? []).find((item) => item.id === preparation.id)
+      message.success(
+        latest?.status === 'READY'
+          ? '审批已完成，准备单 READY；切换到 OPERATOR 身份即可提交 Commit'
+          : '已占用一个审批槽，仍需其他职责批准',
+      )
+    } else {
+      message.info('已驳回该准备单')
+    }
+  } catch (caught) {
+    message.error(describeApiError(caught))
+  } finally {
+    decidingId.value = null
   }
 }
 
@@ -147,14 +252,22 @@ async function handleCommit(): Promise<void> {
     message.warning('请先生成候选版本，再进行 Commit')
     return
   }
+  // 已 READY 的准备单直接复用：否则每次点击都会新建一张待审批准备单，审批永远追不上点击。
+  const reusable = (preparationsState.data.value ?? []).find(
+    (item) => item.pipelineVersionId === versionId && item.status === 'READY',
+  )
   committing.value = true
   try {
-    // Prepare → （审批）→ Commit；后端会在同一事务里冻结事实并按 PDP 决定是否需要审批。
-    const preparation = await studioService.prepare(versionId, null)
+    // Prepare → （审批）→ Commit；后端在同一事务里冻结事实并按 PDP 决定是否需要审批。
+    const preparation = reusable ?? (await studioService.prepare(versionId, null))
     if (preparation.status === 'WAITING_APPROVAL') {
       const roles = preparation.requiredRoles.join('、') || '审批人'
       message.warning(`准备单 ${preparation.id} 等待审批，需 ${roles} 批准后才能 Commit`)
       await preparationsState.run()
+      return
+    }
+    if (preparation.status === 'COMMITTED') {
+      message.warning('该准备单已提交过，请到运行中心查看执行记录')
       return
     }
     const result = await studioService.commitPreparation(preparation.id)
@@ -172,6 +285,7 @@ onMounted(() => {
   void stepsState.run()
   void runState.run()
   void preparationsState.run()
+  void versionsState.run()
 })
 </script>
 
@@ -263,6 +377,24 @@ onMounted(() => {
           <p v-if="runState.data.value" class="mt-4 rounded-lg bg-accent-soft px-3 py-2 text-[11px] text-accent">
             {{ runState.data.value.message }}
           </p>
+
+          <div
+            v-if="runState.data.value?.status === 'WAITING_INPUT'"
+            class="mt-3 flex flex-col gap-2 rounded-lg border border-warn/40 bg-warn/5 p-3"
+          >
+            <strong class="text-[11px] text-warn">Agent 需要澄清</strong>
+            <NInput
+              v-model:value="answerText"
+              type="textarea"
+              :autosize="{ minRows: 2, maxRows: 4 }"
+              placeholder="补充说明后继续生成，例如：订单表按 created_at 增量，水位窗口左开右闭。"
+            />
+            <div class="flex justify-end">
+              <NButton type="primary" size="small" :loading="answering" @click="handleAnswer">
+                提交回答并继续
+              </NButton>
+            </div>
+          </div>
         </Panel>
       </div>
 
@@ -355,7 +487,10 @@ onMounted(() => {
         </div>
       </Panel>
 
-      <Panel title="执行 Preparation" description="审批分离：申请人不能自批；P0 破坏性操作需要双职责双人。">
+      <Panel
+        title="执行 Preparation"
+        description="审批分离：申请人不能自批；P0 破坏性操作需要双职责双人。切换身份后在此占用审批槽，READY 再由 OPERATOR Commit。"
+      >
         <template #actions>
           <NButton
             type="primary"
@@ -371,7 +506,7 @@ onMounted(() => {
 
         <LoadingState v-if="preparationsState.loading.value && !preparationsState.data.value" :rows="2" />
         <div v-else class="overflow-x-auto">
-          <table class="w-full min-w-[860px] border-collapse text-left">
+          <table class="w-full min-w-[1040px] border-collapse text-left">
             <thead>
               <tr class="border-b border-line">
                 <th class="px-3 py-2 font-mono text-[9px] tracking-wider text-muted uppercase">Preparation</th>
@@ -380,6 +515,7 @@ onMounted(() => {
                 <th class="px-3 py-2 font-mono text-[9px] tracking-wider text-muted uppercase">必备职责</th>
                 <th class="px-3 py-2 font-mono text-[9px] tracking-wider text-muted uppercase">状态</th>
                 <th class="px-3 py-2 font-mono text-[9px] tracking-wider text-muted uppercase">到期</th>
+                <th class="px-3 py-2 font-mono text-[9px] tracking-wider text-muted uppercase">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -392,7 +528,9 @@ onMounted(() => {
                   <strong class="block font-mono text-[11px] text-ink">{{ preparation.id }}</strong>
                   <small class="text-[10px] text-muted">{{ preparation.impactReport }}</small>
                 </td>
-                <td class="px-3 py-3 font-mono text-[11px] text-ink">v{{ preparation.pipelineVersionNumber }}</td>
+                <td class="px-3 py-3 font-mono text-[11px] text-ink">
+                  v{{ versionNumberById.get(preparation.pipelineVersionId) ?? '?' }}
+                </td>
                 <td class="px-3 py-3"><RiskBadge :level="preparation.riskLevel" /></td>
                 <td class="px-3 py-3">
                   <span
@@ -406,6 +544,30 @@ onMounted(() => {
                 <td class="px-3 py-3"><StatusTag :status="preparation.status" /></td>
                 <td class="px-3 py-3 font-mono text-[10px] text-muted">
                   {{ preparation.expiresAt.slice(0, 16).replace('T', ' ') }}
+                </td>
+                <td class="px-3 py-3">
+                  <div class="flex items-center gap-1.5">
+                    <NButton
+                      size="tiny"
+                      type="primary"
+                      :disabled="!canDecide(preparation)"
+                      :loading="decidingId === preparation.id"
+                      :title="decisionBlockedReason(preparation)"
+                      @click="handleDecision(preparation, 'APPROVE')"
+                    >
+                      通过
+                    </NButton>
+                    <NButton
+                      size="tiny"
+                      quaternary
+                      :disabled="!canDecide(preparation)"
+                      :loading="decidingId === preparation.id"
+                      :title="decisionBlockedReason(preparation)"
+                      @click="handleDecision(preparation, 'REJECT')"
+                    >
+                      驳回
+                    </NButton>
+                  </div>
                 </td>
               </tr>
             </tbody>
