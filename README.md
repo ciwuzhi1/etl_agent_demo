@@ -48,7 +48,7 @@
 | 语言 | Python 3.12 |
 | Web 框架 | FastAPI + Uvicorn |
 | 异步任务 | Celery（Worker + Beat），Redis 作 broker/backend |
-| 数据库 | PostgreSQL 17（业务库 + 独立 Checkpoint 库），SQLAlchemy 2.x async，Alembic 迁移 |
+| 数据库 | PostgreSQL 16（业务库 + 独立 Checkpoint 库），SQLAlchemy 2.x async，Alembic 迁移 |
 | Agent 编排 | LangGraph + langgraph-checkpoint-postgres |
 | 加密与签名 | cryptography（Fernet）、PyNaCl（Ed25519） |
 | 可观测性 | OpenTelemetry（OTLP/HTTP，FastAPI / httpx / SQLAlchemy / Celery 自动埋点） |
@@ -85,7 +85,7 @@ etl_agent_demo/
 - Python 3.12
 - [uv](https://docs.astral.sh/uv/)
 - Node.js 20+（仅前端开发需要）
-- Docker / Docker Compose（本地 PostgreSQL、Redis；跑真实执行链路还需要 MySQL、Doris、SeaTunnel）
+- Docker / Docker Compose（本地 PostgreSQL、Redis 复用共享容器，见「运行」；跑真实执行链路还需要 MySQL、Doris、SeaTunnel）
 
 ## 安装
 
@@ -127,13 +127,37 @@ cd frontend && npm install
 
 `.env` 已被 `.gitignore` 排除，切勿提交。
 
+本机开发下 `DATABASE_URL` / `CHECKPOINT_DATABASE_URL` 指向共享实例的 `5433`，
+`REDIS_URL` 指向共享实例的 `6379` **db 1**；换环境时只需改这三项。
+
 ## 运行
 
 **基础设施**
 
+本仓库**不再自起 PostgreSQL / Redis**，直接复用同机 `ecommerce-operation-assistant`
+的两个常驻容器（Compose 文件在
+`D:\workspace\Commerce-Operations-Assistant\Commerce-Operations-Assistant\infra\compose.yaml`）：
+
+| 复用项 | 地址 | 说明 |
+|---|---|---|
+| PostgreSQL | `127.0.0.1:5433` | 超级用户 `agent`，初始库 `agent_checkpoints`（属于对方项目） |
+| Redis | `127.0.0.1:6379` | 无密码；本仓库走 **db 1**，对方项目占 db 0 |
+
+先确认这两个容器在跑：
+
 ```bash
-docker compose -f infra/compose.yaml up -d postgres redis
+docker compose -f "D:/workspace/Commerce-Operations-Assistant/Commerce-Operations-Assistant/infra/compose.yaml" up -d
 ```
+
+再在共享实例上追加本仓库自己的两库两账号（幂等，可重复执行）：
+
+```bash
+docker exec -i ecommerce-operation-assistant-agent-checkpoints \
+  psql -U agent -d postgres -v ON_ERROR_STOP=1 < infra/postgres-init.sql
+```
+
+`infra/compose.yaml` 现在只保留按需启用的 `e2e` Profile（MySQL / Doris / SeaTunnel），
+默认 `up -d` 不会启动任何容器。
 
 **数据库迁移**
 
@@ -164,6 +188,10 @@ cd frontend && npm run dev        # http://localhost:5173，已配置 /api 与 /
 docker compose -f infra/compose.yaml --profile e2e up -d
 uv run python scripts/e2e/pipeline_run.py
 ```
+
+> 只跑共享的 PostgreSQL + Redis 两个容器时，控制面全链路（建连接 → 生成 → 校验 →
+> 审批 → Prepare → Commit → 落执行记录）照常走通，但最后一步提交到 SeaTunnel Zeta
+> 会以 `FAILED` 收尾 —— 数据面容器没起，这是预期结果，不是配置错误。
 
 **健康检查**
 
@@ -210,7 +238,7 @@ uv run mypy                         # strict
 
 ## 部署
 
-1. 准备 PostgreSQL 17、Redis、SeaTunnel Zeta，以及受管的 MySQL / Doris
+1. 准备 PostgreSQL 16、Redis、SeaTunnel Zeta，以及受管的 MySQL / Doris
 2. `ETL_AGENT_ENVIRONMENT=production`，关闭 `ETL_AGENT_BOOTSTRAP_ENABLED`
 3. 配齐凭据：`ETL_AGENT_SECRET_MASTER_KEY`（或 Vault 连接）、Harness 签名密钥、网关 HMAC 密钥
 4. `uv run alembic upgrade head`

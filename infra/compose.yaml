@@ -1,36 +1,30 @@
 name: seatunnel-etl-agent
 
+# =============================================================================
+# SeaTunnel ETL Agent · 开发环境容器
+#
+# 本文件**不再包含常驻的 postgres / redis**。本机开发环境已收敛为只跑
+# ecommerce-operation-assistant 的这两个容器（见
+# D:\workspace\Commerce-Operations-Assistant\Commerce-Operations-Assistant\infra\compose.yaml）：
+#
+#   postgres  127.0.0.1:5433   超级用户 agent，初始库 agent_checkpoints
+#   redis     127.0.0.1:6379   无密码
+#
+# 本仓库直接复用它们，不再自起实例：
+#
+#   业务库 / Checkpoint 库  用 infra/postgres-init.sql 在 5433 实例上追加
+#                            etl_agent 与 etl_checkpoint 两库两账号（幂等，可重复执行）。
+#   Celery broker/backend   复用 6379，但**走 db 1**（redis://localhost:6379/1）。
+#                            对方项目占 db 0，其 celeryev / pidbox 是 fanout 交换机，
+#                            同库会让两个项目的 Worker 互相收到对方的事件，故逻辑库错开。
+#
+# 因此默认 `docker compose -f infra/compose.yaml up -d` 不会启动任何容器；
+# 本文件现在只保留按需启用的 e2e Profile（真实数据面：MySQL → SeaTunnel → Doris）。
+#
+# 启动 e2e Profile：docker compose -f infra/compose.yaml --profile e2e up -d
+# =============================================================================
+
 services:
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: etl_agent
-      POSTGRES_PASSWORD: etl_agent
-      POSTGRES_DB: etl_agent
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./postgres-init.sql:/docker-entrypoint-initdb.d/10-checkpoint.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U etl_agent -d etl_agent"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis:
-    image: redis:8-alpine
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   mysql-e2e:
     image: mysql:8.4
     profiles: ["e2e"]
@@ -167,8 +161,6 @@ services:
       - doris-network
 
 volumes:
-  postgres-data:
-  redis-data:
   mysql-e2e-data:
   doris-fe-data:
   doris-fe-log:

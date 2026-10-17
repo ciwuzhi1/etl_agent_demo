@@ -4,6 +4,8 @@
 
 ## 前置
 
+0. 共享容器在跑（`ecommerce-operation-assistant` 的 postgres 5433 + redis 6379），
+   且本仓库的两库已建好：见仓库根 `README.md`「运行 → 基础设施」。
 1. 数据库迁移到位：`uv run alembic upgrade head`
 2. 三个进程都起来：
    ```bash
