@@ -7,7 +7,7 @@
 > | 日期 | 2026-10-14 |
 > | 状态 | 评审稿（已按参考实现与评审意见核对） |
 > | 环境范围 | **测试 / 演示环境；暂不考虑生产环境** |
-> | 需求来源 | 《尚硅谷大模型项目之生产级ETL-Agent.md》第 0 章；`prompt/prd.prompt` |
+> | 需求来源 | 《生产级ETL-Agent.md》第 0 章；`prompt/prd.prompt` |
 > | 事实校验来源 | 参考实现 `../etl_agent`：`domain/enums.py`、`domain/state_machine.py`、`domain/harness.py`、`domain/side_effects.py`、`domain/supervision.py`、`application/harness_policy.py`、`application/execution_harness.py`、`application/runtime_supervision.py`、`infrastructure/models.py`、`config.py`、`benchmarks/harness-v2/v1/*` |
 
 **一句话定位**：etl_agent 是**企业 ETL 任务的智能控制面**——理解自然语言需求、探查受管元数据、生成候选方案、解释风险、请求具名审批并跟踪执行结果；**真正的数据搬运交给 Apache SeaTunnel Zeta**。产品只做一件事并做到底：**模型只负责"提建议"，从建议到真实副作用的每一道关口都由确定性代码和具名的人把守。**
